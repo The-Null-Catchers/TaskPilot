@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.attachment_security import detect_mime, safe_filename
 from app.core.config import settings
 from app.db import get_db
 from app.models import Comment, Task, User, Workspace
+from app.security_controls import enforce_rate_limit
 from app.storage import delete_keys, make_thumbnail, presigned_download_url, presigned_preview_url, put_bytes
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
@@ -76,12 +77,20 @@ async def _authorize_attachment(
 
 @router.post("", response_model=AttachmentOut, status_code=201)
 async def upload_attachment(
+    request: Request,
     entity_type: EntityType = Form(...),
     entity_id: UUID = Form(...),
     file: UploadFile = File(...),
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        bucket="attachment_upload",
+        limit=30,
+        window_seconds=60,
+        subject=str(user.id),
+    )
     workspace_id, _ = await _resolve_entity(db, entity_type, entity_id, user.id, write=True)
 
     workspace = await db.scalar(

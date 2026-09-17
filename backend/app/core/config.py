@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     smtp_from_email: str = "TaskPilot <no-reply@taskpilot.local>"
     smtp_starttls: bool = True
     account_token_minutes: int = 60
+    trust_proxy_headers: bool = False
     notification_secret: str | None = None
     webpush_vapid_private_key: str | None = None
     webpush_vapid_public_key: str | None = None

@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.security import create_access_token, hash_password, new_refresh_token, token_digest, verify_password
 from app.db import get_db
 from app.models import Session, User, Workspace, WorkspaceMember
+from app.security_controls import client_ip, enforce_rate_limit
 from app.schemas import AuthOut, LoginIn, RefreshIn, RegisterIn, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -88,6 +89,7 @@ async def register(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(request, bucket="register", limit=10, window_seconds=3600)
     email = data.email.lower()
     if await db.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -113,14 +115,23 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await db.scalar(select(User).where(User.email == data.email.lower()))
+    email = data.email.lower()
+    await enforce_rate_limit(request, bucket="login_ip", limit=60, window_seconds=300)
+    await enforce_rate_limit(
+        request,
+        bucket="login_account",
+        limit=20,
+        window_seconds=300,
+        subject=f"{client_ip(request)}:{email}",
+    )
+    user = await db.scalar(select(User).where(User.email == email))
     if not user or not verify_password(data.password, user.password_hash) or not user.is_active:
         _audit(
             db,
             "auth.login_failed",
             request,
             user.id if user else None,
-            {"email": data.email.lower()},
+            {"email": email},
         )
         await db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -157,6 +168,7 @@ async def refresh(
     tp_refresh: str | None = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(request, bucket="refresh", limit=120, window_seconds=60)
     raw = data.refresh_token or tp_refresh
     if not raw:
         raise HTTPException(status_code=401, detail="Refresh token required")
