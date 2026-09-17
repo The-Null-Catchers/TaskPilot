@@ -5,12 +5,16 @@ import 'package:go_router/go_router.dart';
 import 'core/offline_queue.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/login_screen.dart';
+import 'features/calendar/calendar_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/projects/board_screen.dart';
+import 'features/projects/project_insights_screen.dart';
 import 'features/projects/projects_screen.dart';
+import 'features/search/global_search_screen.dart';
 import 'features/sync/sync_center_screen.dart';
 import 'features/tasks/my_tasks_screen.dart';
+import 'features/tasks/task_attachments_screen.dart';
 import 'features/tasks/task_detail_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -29,11 +33,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/my-tasks', builder: (_, __) => const MyTasksScreen()),
+      GoRoute(path: '/calendar', builder: (_, __) => const CalendarScreen()),
+      GoRoute(path: '/search', builder: (_, __) => const GlobalSearchScreen()),
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
       GoRoute(path: '/sync', builder: (_, __) => const SyncCenterScreen()),
       GoRoute(path: '/workspaces/:workspaceId/projects', builder: (_, state) => ProjectsScreen(workspaceId: state.pathParameters['workspaceId']!)),
       GoRoute(path: '/projects/:projectId', builder: (_, state) => BoardScreen(projectId: state.pathParameters['projectId']!)),
+      GoRoute(path: '/projects/:projectId/insights', builder: (_, state) => ProjectInsightsScreen(projectId: state.pathParameters['projectId']!)),
       GoRoute(path: '/tasks/:taskId', builder: (_, state) => TaskDetailScreen(taskId: state.pathParameters['taskId']!)),
+      GoRoute(path: '/tasks/:taskId/attachments', builder: (_, state) => TaskAttachmentsScreen(taskId: state.pathParameters['taskId']!)),
     ],
   );
 });

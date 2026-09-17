@@ -46,7 +46,10 @@ class BoardScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(board?.project.name ?? 'Board'),
-        actions: [IconButton(onPressed: () => ref.read(boardProvider(projectId).notifier).load(), icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh')],
+        actions: [
+          IconButton(onPressed: () => context.push('/projects/$projectId/insights'), icon: const Icon(Icons.insights_rounded), tooltip: 'Overview & timeline'),
+          IconButton(onPressed: () => ref.read(boardProvider(projectId).notifier).load(), icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh'),
+        ],
       ),
       body: SafeArea(
         child: Column(children: [
@@ -88,7 +91,11 @@ class BoardScreen extends ConsumerWidget {
                                         child: Padding(
                                           padding: const EdgeInsets.all(14),
                                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w600))), if (!state.offline) PopupMenuButton<BoardColumn>(tooltip: 'Move task', icon: const Icon(Icons.more_horiz_rounded, size: 20), onSelected: (destination) => _moveTask(context, ref, task, destination), itemBuilder: (_) => board.columns.where((item) => item.id != task.columnId).map((item) => PopupMenuItem(value: item, child: Text('Move to ${item.name}'))).toList())]),
+                                            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                              Expanded(child: Text(task.title, style: const TextStyle(fontWeight: FontWeight.w600))),
+                                              IconButton(onPressed: () => context.push('/tasks/${task.id}/attachments'), icon: const Icon(Icons.attach_file_rounded, size: 19), tooltip: 'Attachments', visualDensity: VisualDensity.compact),
+                                              if (!state.offline) PopupMenuButton<BoardColumn>(tooltip: 'Move task', icon: const Icon(Icons.more_horiz_rounded, size: 20), onSelected: (destination) => _moveTask(context, ref, task, destination), itemBuilder: (_) => board.columns.where((item) => item.id != task.columnId).map((item) => PopupMenuItem(value: item, child: Text('Move to ${item.name}'))).toList()),
+                                            ]),
                                             const SizedBox(height: 10),
                                             Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [Text(task.identifier, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w700)), _PriorityChip(priority: task.priority), if (task.dueDate != null) Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.schedule_rounded, size: 13), const SizedBox(width: 3), Text(task.dueDate!.split('T').first, style: Theme.of(context).textTheme.labelSmall)])]),
                                           ]),
