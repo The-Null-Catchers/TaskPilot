@@ -12,11 +12,38 @@ permissions:
 
 jobs:
   backend:
-    name: Backend lint and tests
+    name: Backend lint, migrations, and tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: taskpilot
+          POSTGRES_USER: taskpilot
+          POSTGRES_PASSWORD: taskpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskpilot -d taskpilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend
+    env:
+      DATABASE_URL: postgresql+asyncpg://taskpilot:taskpilot@localhost:5432/taskpilot
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-only-secret-that-is-never-used-in-production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,6 +52,11 @@ jobs:
           cache: pip
       - run: pip install '.[dev]'
       - run: ruff check app tests
+      - name: Verify migrations from an empty database
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
       - run: pytest -q
 
   web:
