@@ -140,7 +140,7 @@ class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> w
     final tasks = _list(_timeline, 'tasks');
     final milestones = _list(_timeline, 'milestones');
     if (tasks.isEmpty && milestones.isEmpty) {
-      return const ListView(children: [SizedBox(height: 120), Center(child: Text('No timeline data yet.'))]);
+      return ListView(children: const [SizedBox(height: 120), Center(child: Text('No timeline data yet.'))]);
     }
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
