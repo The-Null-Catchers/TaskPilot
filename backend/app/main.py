@@ -21,6 +21,7 @@ from app.api.routes import (
     notifications,
     personalization,
     planning,
+    project_insights,
     projects,
     search,
     task_collaboration,
@@ -51,7 +52,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title='TaskPilot API',
-    version='0.4.0',
+    version='0.5.0',
     openapi_url='/api/v1/openapi.json',
     docs_url='/api/v1/docs',
     lifespan=lifespan,
@@ -72,6 +73,7 @@ for router in (
     task_collaboration.router,
     attachments.router,
     planning.router,
+    project_insights.router,
     personalization.router,
     task_productivity.router,
     notifications.router,
