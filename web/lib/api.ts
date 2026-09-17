@@ -13,6 +13,26 @@ export type ChecklistItem = { id:string; checklist_id:string; title:string; comp
 export type UserSummary = { id:string; email:string; name:string }
 export type Board = { project:Project; columns:Column[]; tasks:Task[] }
 
+export type TaskPage = { items:Task[]; total:number; limit:number; offset:number }
+export type SavedView = { id:string; workspace_id:string; project_id:string|null; name:string; filters:Record<string,unknown>; sort_by:'due_date'|'priority'|'created_at'|'updated_at'; sort_direction:'asc'|'desc'; display_mode:'list'|'board'|'calendar'; created_at:string; updated_at:string }
+export type Favorite = { id:string; workspace_id:string; entity_type:'project'|'board'|'saved_view'; entity_id:string; created_at:string }
+export type RecentItem = { id:string; workspace_id:string; entity_type:'task'|'project'|'board'; entity_id:string; viewed_at:string }
+export type TimeEntry = { id:string; task_id:string; user_id:string; started_at:string; ended_at:string|null; duration_seconds:number|null; note:string; created_at:string }
+export type TimeSummary = { entries:TimeEntry[]; total_seconds:number; running_entry:TimeEntry|null }
+export type CustomField = { id:string; workspace_id:string; name:string; field_type:'text'|'number'|'dropdown'|'date'|'checkbox'|'user'|'url'; options:string[]; required:boolean; position:number; created_at:string; updated_at:string }
+export type TaskCustomFieldValue = { field:CustomField; value:unknown; updated_at:string|null }
+export type CalendarItem = { id:string; kind:'task'|'project'; title:string; starts_at:string; workspace_id:string; project_id:string; task_id:string|null; identifier:string|null; priority:string|null; status:string|null }
+export type TimelineTask = { id:string; identifier:string; title:string; status:string; priority:string; start_at:string; due_at:string|null; blocked_by:string[] }
+export type Timeline = { project_id:string; tasks:TimelineTask[] }
+export type Notification = { id:string; kind:string; title:string; body:string; entity_type:string|null; entity_id:string|null; read_at:string|null; created_at:string }
+export type SearchResults = {
+  workspaces:{id:string;name:string;slug:string}[]
+  projects:{id:string;workspace_id:string;name:string;key:string}[]
+  tasks:{id:string;workspace_id:string;project_id:string;identifier:string;title:string;priority:string;status:string}[]
+  comments:{id:string;task_id:string;project_id:string;workspace_id:string;task_identifier:string;body:string}[]
+  labels:{id:string;workspace_id:string;name:string;color:string}[]
+}
+
 export class ApiError extends Error {
   constructor(public status:number, message:string) { super(message) }
 }
