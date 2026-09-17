@@ -41,8 +41,11 @@ logger = logging.getLogger('taskpilot')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.app_env == 'production' and settings.jwt_secret == 'development-only-change-me':
-        raise RuntimeError('JWT_SECRET must be changed in production')
+    if settings.app_env == 'production':
+        if settings.jwt_secret == 'development-only-change-me':
+            raise RuntimeError('JWT_SECRET must be changed in production')
+        if settings.storage_secret == 'taskpilot-dev-password':
+            raise RuntimeError('STORAGE_SECRET must be changed in production')
     yield
 
 
