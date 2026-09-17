@@ -28,6 +28,11 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-taskpilot-dev-password}
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio_data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
   backend:
     build: ./backend
     env_file: .env
@@ -37,6 +42,7 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
   worker:
     build: ./backend
     env_file: .env
