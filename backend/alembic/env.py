@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app import collaboration_models, models  # noqa: F401
+from app import collaboration_models, models, productivity_models  # noqa: F401
 from app.core.config import settings
 from app.db import Base
 
