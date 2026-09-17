@@ -46,8 +46,7 @@ class AuthController extends StateNotifier<AuthState> {
     state = const AuthState(loading: true);
     try {
       final response = await api.dio.post('/api/v1/auth/register', data: {'name': name.trim(), 'email': email.trim(), 'password': password});
-      // Registration defaults to web semantics server-side, so immediately obtain a mobile session through login.
-      if (response.statusCode == 201) return login(email, password);
+      if (response.statusCode == 201) return await login(email, password);
       return false;
     } on DioException catch (e) {
       state = AuthState(error: (e.response?.data is Map ? e.response?.data['detail'] : null)?.toString() ?? 'Unable to register');
