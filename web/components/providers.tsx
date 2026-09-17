@@ -1,6 +1,6 @@
 'use client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { request, User } from '@/lib/api'
 
 type AuthValue = { user:User|null; token:string|null; loading:boolean; login:(email:string,password:string)=>Promise<void>; register:(name:string,email:string,password:string)=>Promise<void>; logout:()=>Promise<void> }
