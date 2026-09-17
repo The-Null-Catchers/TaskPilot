@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../core/api.dart';
 
 class Workspace {
@@ -29,17 +31,22 @@ class HomeController extends StateNotifier<HomeState> {
     final prefs = await SharedPreferences.getInstance();
     try {
       final response = await api.dio.get('/api/v1/workspaces');
-      final items = (response.data as List).cast<Map<String, dynamic>>().map(Workspace.fromJson).toList();
-      await prefs.setString('cached_workspaces', jsonEncode(items.map((e) => e.toJson()).toList()));
+      final items = (response.data as List).map((item) => Workspace.fromJson((item as Map).cast<String, dynamic>())).toList();
+      await prefs.setString('cached_workspaces', jsonEncode(items.map((item) => item.toJson()).toList()));
       state = HomeState(loading: false, workspaces: items);
     } catch (_) {
       final cached = prefs.getString('cached_workspaces');
       if (cached != null) {
-        final items = (jsonDecode(cached) as List).cast<Map<String, dynamic>>().map(Workspace.fromJson).toList();
+        final items = (jsonDecode(cached) as List).map((item) => Workspace.fromJson((item as Map).cast<String, dynamic>())).toList();
         state = HomeState(loading: false, offline: true, workspaces: items);
       } else {
         state = const HomeState(loading: false, offline: true, error: 'Connect to the internet to load your workspace.');
       }
     }
+  }
+
+  Future<void> createWorkspace(String name) async {
+    await api.dio.post('/api/v1/workspaces', data: {'name': name});
+    await load();
   }
 }
