@@ -90,23 +90,43 @@ final offlineQueueProvider = StateNotifierProvider<OfflineQueueController, Offli
 class OfflineQueueController extends StateNotifier<OfflineQueueState> {
   OfflineQueueController(this.api) : super(const OfflineQueueState());
   final ApiClient api;
-  static const _storageKey = 'taskpilot_offline_mutations_v1';
+  String? _loadedUserId;
+
+  String _storageKey(String userId) => 'taskpilot_offline_mutations_v1_$userId';
+
+  Future<List<OfflineMutation>> _read(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_storageKey(userId));
+    if (raw == null) return <OfflineMutation>[];
+    return (jsonDecode(raw) as List)
+        .map((item) => OfflineMutation.fromJson((item as Map).cast<String, dynamic>()))
+        .toList();
+  }
+
+  Future<bool> _ensureCurrentUser() async {
+    final userId = await api.currentUserId();
+    if (userId == null) {
+      if (_loadedUserId != null || state.loading) {
+        _loadedUserId = null;
+        state = const OfflineQueueState(loading: false);
+      }
+      return false;
+    }
+    if (_loadedUserId == userId && !state.loading) return true;
+    _loadedUserId = userId;
+    state = OfflineQueueState(loading: false, items: await _read(userId));
+    return true;
+  }
 
   Future<void> initialize() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    final items = raw == null
-        ? <OfflineMutation>[]
-        : (jsonDecode(raw) as List)
-            .map((item) => OfflineMutation.fromJson((item as Map).cast<String, dynamic>()))
-            .toList();
-    state = OfflineQueueState(loading: false, items: items);
-    await sync();
+    await _ensureCurrentUser();
   }
 
   Future<void> _persist(List<OfflineMutation> items) async {
+    if (!await _ensureCurrentUser()) return;
+    final userId = _loadedUserId!;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(items.map((item) => item.toJson()).toList()));
+    await prefs.setString(_storageKey(userId), jsonEncode(items.map((item) => item.toJson()).toList()));
     state = OfflineQueueState(loading: false, syncing: state.syncing, items: items);
   }
 
@@ -125,6 +145,9 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
     required Map<String, dynamic> data,
     required String label,
   }) async {
+    if (!await _ensureCurrentUser()) {
+      throw StateError('Offline changes require an authenticated account');
+    }
     try {
       await api.dio.request(path, data: data, options: Options(method: method));
       return MutationOutcome.synced;
@@ -147,11 +170,13 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
   }
 
   Future<void> sync() async {
-    if (state.loading || state.syncing || state.items.isEmpty) return;
-    state = OfflineQueueState(loading: false, syncing: true, items: state.items);
+    if (!await _ensureCurrentUser()) return;
+    if (state.syncing || state.items.isEmpty) return;
+    final sourceItems = List<OfflineMutation>.from(state.items);
+    state = OfflineQueueState(loading: false, syncing: true, items: sourceItems);
     final next = <OfflineMutation>[];
     var offline = false;
-    for (final mutation in state.items) {
+    for (final mutation in sourceItems) {
       if (mutation.status == OfflineMutationStatus.conflict) {
         next.add(mutation);
         continue;
@@ -188,10 +213,12 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
   }
 
   Future<void> discard(String id) async {
+    if (!await _ensureCurrentUser()) return;
     await _persist(state.items.where((item) => item.id != id).toList());
   }
 
   Future<void> retry(String id) async {
+    if (!await _ensureCurrentUser()) return;
     final items = state.items
         .map((item) => item.id == id
             ? item.copyWith(status: OfflineMutationStatus.pending, clearError: true)
@@ -202,6 +229,7 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
   }
 
   Future<void> applyLocalConflict(String id) async {
+    if (!await _ensureCurrentUser()) return;
     final mutation = state.items.where((item) => item.id == id).firstOrNull;
     if (mutation == null) return;
     var data = Map<String, dynamic>.from(mutation.data);
