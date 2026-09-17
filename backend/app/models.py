@@ -1,7 +1,9 @@
 import uuid
 from datetime import UTC, date, datetime
+
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
+
 from app.db import Base
 
 
@@ -109,7 +111,9 @@ class Task(Base):
     priority: Mapped[str] = mapped_column(String(16), default="none", index=True)
     status: Mapped[str] = mapped_column(String(24), default="open", index=True)
     position: Mapped[float] = mapped_column(Float, default=1000.0)
+    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
