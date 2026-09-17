@@ -7,12 +7,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user, require_workspace
-from app.collaboration_models import AuditLog, ProjectMember
+from app.collaboration_models import AuditLog, ProjectMember, WorkspaceArchive
 from app.collaboration_schemas import (
     OwnershipTransferIn,
     WorkspaceInvitationCreated,
     WorkspaceInvitationOut,
+    WorkspaceInvitationPreview,
     WorkspaceInviteCreate,
+    WorkspaceLifecycleOut,
     WorkspaceMemberOut,
     WorkspaceMemberUpdate,
     WorkspaceUpdate,
@@ -57,18 +59,52 @@ async def _workspace(db: AsyncSession, workspace_id: UUID) -> Workspace:
     return workspace
 
 
+def _archived_out(workspace: Workspace, archive: WorkspaceArchive) -> WorkspaceLifecycleOut:
+    return WorkspaceLifecycleOut(
+        id=workspace.id,
+        name=workspace.name,
+        slug=workspace.slug,
+        owner_id=workspace.owner_id,
+        archived_at=archive.archived_at,
+        archived_by_id=archive.archived_by_id,
+        created_at=workspace.created_at,
+        updated_at=workspace.updated_at,
+    )
+
+
 @router.get("", response_model=list[WorkspaceOut])
 async def list_workspaces(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    archived_ids = select(WorkspaceArchive.workspace_id)
     query = (
         select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
-        .where(WorkspaceMember.user_id == user.id)
+        .where(
+            WorkspaceMember.user_id == user.id,
+            ~Workspace.id.in_(archived_ids),
+        )
         .order_by(Workspace.updated_at.desc())
     )
     return list((await db.scalars(query)).all())
+
+
+@router.get("/archived", response_model=list[WorkspaceLifecycleOut])
+async def list_archived_workspaces(
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (
+        await db.execute(
+            select(Workspace, WorkspaceArchive)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .join(WorkspaceArchive, WorkspaceArchive.workspace_id == Workspace.id)
+            .where(WorkspaceMember.user_id == user.id)
+            .order_by(WorkspaceArchive.archived_at.desc())
+        )
+    ).all()
+    return [_archived_out(workspace, archive) for workspace, archive in rows]
 
 
 @router.post("", response_model=WorkspaceOut, status_code=201)
@@ -108,7 +144,7 @@ async def list_members(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_workspace(db, workspace_id, user.id)
+    await require_workspace(db, workspace_id, user.id, allow_archived=True)
     rows = (
         await db.execute(
             select(WorkspaceMember, User)
@@ -228,11 +264,13 @@ async def list_invitations(
     db: AsyncSession = Depends(get_db),
 ):
     await require_workspace(db, workspace_id, user.id, {"owner", "admin"})
+    now = datetime.now(UTC)
     query = (
         select(WorkspaceInvitation)
         .where(
             WorkspaceInvitation.workspace_id == workspace_id,
             WorkspaceInvitation.accepted_at.is_(None),
+            WorkspaceInvitation.expires_at > now,
         )
         .order_by(WorkspaceInvitation.created_at.desc())
     )
@@ -317,7 +355,57 @@ async def _invitation_from_token(db: AsyncSession, token: str) -> WorkspaceInvit
         or invitation.expires_at <= datetime.now(UTC)
     ):
         raise HTTPException(status_code=404, detail="Invitation is invalid or expired")
+    archive = await db.get(WorkspaceArchive, invitation.workspace_id)
+    if archive is not None:
+        raise HTTPException(status_code=409, detail="Workspace is archived")
     return invitation
+
+
+@router.get("/invitations/{token}", response_model=WorkspaceInvitationPreview)
+async def preview_invitation(
+    token: str,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    invitation = await _invitation_from_token(db, token)
+    if user.email.lower() != invitation.email.lower():
+        raise HTTPException(status_code=403, detail="Invitation belongs to another email address")
+    workspace = await _workspace(db, invitation.workspace_id)
+    return WorkspaceInvitationPreview(
+        workspace_id=workspace.id,
+        workspace_name=workspace.name,
+        email=invitation.email,
+        role=invitation.role,
+        expires_at=invitation.expires_at,
+    )
+
+
+@router.delete("/{workspace_id}/invitations/{invitation_id}", status_code=204)
+async def cancel_invitation(
+    workspace_id: UUID,
+    invitation_id: UUID,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    actor_role = await require_workspace(db, workspace_id, user.id, {"owner", "admin"})
+    invitation = await db.get(WorkspaceInvitation, invitation_id)
+    if not invitation or invitation.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if invitation.accepted_at is not None:
+        raise HTTPException(status_code=409, detail="Invitation has already been accepted")
+    if not can_invite_role(actor_role, invitation.role):
+        raise HTTPException(status_code=403, detail="You cannot cancel this invitation")
+    _audit(
+        db,
+        actor_id=user.id,
+        action="workspace.invitation.cancelled",
+        workspace_id=workspace_id,
+        request=request,
+        metadata={"invitation_id": invitation.id, "email": invitation.email},
+    )
+    await db.delete(invitation)
+    await db.commit()
 
 
 @router.post("/invitations/{token}/accept", response_model=WorkspaceOut)
@@ -423,6 +511,68 @@ async def transfer_ownership(
     return workspace
 
 
+@router.post("/{workspace_id}/archive", response_model=WorkspaceLifecycleOut)
+async def archive_workspace(
+    workspace_id: UUID,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_workspace(db, workspace_id, user.id, {"owner"})
+    workspace = await _workspace(db, workspace_id)
+    archive = WorkspaceArchive(workspace_id=workspace_id, archived_by_id=user.id)
+    db.add(archive)
+    await db.execute(
+        delete(WorkspaceInvitation).where(
+            WorkspaceInvitation.workspace_id == workspace_id,
+            WorkspaceInvitation.accepted_at.is_(None),
+        )
+    )
+    _audit(
+        db,
+        actor_id=user.id,
+        action="workspace.archived",
+        workspace_id=workspace_id,
+        request=request,
+        metadata={"workspace_name": workspace.name},
+    )
+    await db.commit()
+    await db.refresh(archive)
+    return _archived_out(workspace, archive)
+
+
+@router.post("/{workspace_id}/restore", response_model=WorkspaceOut)
+async def restore_workspace(
+    workspace_id: UUID,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await require_workspace(
+        db,
+        workspace_id,
+        user.id,
+        {"owner"},
+        allow_archived=True,
+    )
+    workspace = await _workspace(db, workspace_id)
+    archive = await db.get(WorkspaceArchive, workspace_id)
+    if archive is None:
+        return workspace
+    await db.delete(archive)
+    _audit(
+        db,
+        actor_id=user.id,
+        action="workspace.restored",
+        workspace_id=workspace_id,
+        request=request,
+        metadata={"workspace_name": workspace.name},
+    )
+    await db.commit()
+    await db.refresh(workspace)
+    return workspace
+
+
 @router.post("/{workspace_id}/leave", status_code=204)
 async def leave_workspace(
     workspace_id: UUID,
@@ -430,7 +580,7 @@ async def leave_workspace(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    role = await require_workspace(db, workspace_id, user.id)
+    role = await require_workspace(db, workspace_id, user.id, allow_archived=True)
     if role == "owner":
         raise HTTPException(status_code=409, detail="Transfer ownership before leaving")
     member = await db.scalar(
@@ -459,7 +609,13 @@ async def delete_workspace(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_workspace(db, workspace_id, user.id, {"owner"})
+    await require_workspace(
+        db,
+        workspace_id,
+        user.id,
+        {"owner"},
+        allow_archived=True,
+    )
     workspace = await _workspace(db, workspace_id)
     _audit(
         db,
