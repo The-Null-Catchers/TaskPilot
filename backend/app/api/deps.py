@@ -55,9 +55,14 @@ async def require_workspace(
     allowed: set[str] | None = None,
     *,
     allow_archived: bool = False,
+    write: bool = False,
 ) -> str:
     role = await workspace_role(db, workspace_id, user_id)
-    if role is None or (allowed is not None and role not in allowed):
+    effective_allowed = allowed
+    if write:
+        writable = {"owner", "admin", "member"}
+        effective_allowed = writable if effective_allowed is None else effective_allowed & writable
+    if role is None or (effective_allowed is not None and role not in effective_allowed):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Workspace access denied",
