@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api.dart';
+import '../../core/offline_queue.dart';
 import 'task_models.dart';
 
 class PersonItem {
@@ -40,9 +41,11 @@ class ChecklistGroup {
 }
 
 class TaskDetailState {
-  const TaskDetailState({this.loading = true, this.offline = false, this.task, this.comments = const [], this.assignees = const [], this.members = const [], this.subtasks = const [], this.checklists = const [], this.error});
+  const TaskDetailState({this.loading = true, this.offline = false, this.pendingSync = false, this.conflict = false, this.task, this.comments = const [], this.assignees = const [], this.members = const [], this.subtasks = const [], this.checklists = const [], this.error});
   final bool loading;
   final bool offline;
+  final bool pendingSync;
+  final bool conflict;
   final TaskItem? task;
   final List<CommentItem> comments;
   final List<PersonItem> assignees;
@@ -52,17 +55,32 @@ class TaskDetailState {
   final String? error;
 }
 
-final taskDetailProvider = StateNotifierProvider.family<TaskDetailController, TaskDetailState, String>((ref, taskId) => TaskDetailController(ref.watch(apiProvider), taskId)..load());
+final taskDetailProvider = StateNotifierProvider.family<TaskDetailController, TaskDetailState, String>((ref, taskId) => TaskDetailController(ref.watch(apiProvider), ref.read(offlineQueueProvider.notifier), taskId)..load());
 
 class TaskDetailController extends StateNotifier<TaskDetailState> {
-  TaskDetailController(this.api, this.taskId) : super(const TaskDetailState());
+  TaskDetailController(this.api, this.queue, this.taskId) : super(const TaskDetailState());
   final ApiClient api;
+  final OfflineQueueController queue;
   final String taskId;
+
+  TaskDetailState _withStatus({TaskItem? task, bool? offline, bool? pendingSync, bool? conflict}) => TaskDetailState(
+        loading: false,
+        offline: offline ?? state.offline,
+        pendingSync: pendingSync ?? state.pendingSync,
+        conflict: conflict ?? state.conflict,
+        task: task ?? state.task,
+        comments: state.comments,
+        assignees: state.assignees,
+        members: state.members,
+        subtasks: state.subtasks,
+        checklists: state.checklists,
+        error: state.error,
+      );
 
   Future<void> load({bool quiet = false}) async {
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'cached_task_$taskId';
-    if (!quiet) state = TaskDetailState(loading: true, task: state.task);
+    if (!quiet) state = TaskDetailState(loading: true, task: state.task, pendingSync: state.pendingSync, conflict: state.conflict);
     try {
       final taskResponse = await api.dio.get('/api/v1/tasks/$taskId');
       final task = TaskItem.fromJson((taskResponse.data as Map).cast<String, dynamic>());
@@ -89,57 +107,74 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     } catch (_) {
       final cached = prefs.getString(cacheKey);
       if (cached != null) {
-        state = TaskDetailState(loading: false, offline: true, task: TaskItem.fromJson((jsonDecode(cached) as Map).cast<String, dynamic>()));
+        state = TaskDetailState(loading: false, offline: true, pendingSync: state.pendingSync, conflict: state.conflict, task: TaskItem.fromJson((jsonDecode(cached) as Map).cast<String, dynamic>()));
       } else {
-        state = const TaskDetailState(loading: false, offline: true, error: 'Connect to the internet to load this task.');
+        state = TaskDetailState(loading: false, offline: true, pendingSync: state.pendingSync, conflict: state.conflict, error: 'Connect to the internet to load this task.');
       }
     }
   }
 
-  Future<void> updateTask({required String title, required String description, required String priority, required String status, String? dueDate}) async {
+  Future<MutationOutcome> updateTask({required String title, required String description, required String priority, required String status, String? dueDate}) async {
     final task = state.task;
-    if (task == null) return;
-    await api.dio.patch('/api/v1/tasks/$taskId', data: {'version': task.version, 'title': title, 'description': description, 'priority': priority, 'status': status, 'due_date': dueDate});
-    await load(quiet: true);
+    if (task == null) return MutationOutcome.conflict;
+    final data = {'version': task.version, 'title': title, 'description': description, 'priority': priority, 'status': status, 'due_date': dueDate};
+    final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId', data: data, label: 'Update ${task.identifier}');
+    if (outcome == MutationOutcome.synced) {
+      await load(quiet: true);
+    } else {
+      final optimistic = task.copyWith(title: title, description: description, priority: priority, status: status, dueDate: dueDate, clearDueDate: dueDate == null, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_task_$taskId', jsonEncode(optimistic.toJson()));
+      state = _withStatus(task: optimistic, offline: true, pendingSync: outcome == MutationOutcome.queued, conflict: outcome == MutationOutcome.conflict);
+    }
+    return outcome;
   }
 
-  Future<void> addComment(String body) async {
-    await api.dio.post('/api/v1/tasks/$taskId/comments', data: {'body': body});
-    await load(quiet: true);
+  Future<MutationOutcome> addComment(String body) async {
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/comments', data: {'body': body}, label: 'Comment on ${state.task?.identifier ?? 'task'}');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> assign(String userId) async {
-    await api.dio.post('/api/v1/tasks/$taskId/assignees', data: {'user_id': userId});
-    await load(quiet: true);
+  Future<MutationOutcome> assign(String userId) async {
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/assignees', data: {'user_id': userId}, label: 'Assign ${state.task?.identifier ?? 'task'}');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> unassign(String userId) async {
-    await api.dio.delete('/api/v1/tasks/$taskId/assignees/$userId');
-    await load(quiet: true);
+  Future<MutationOutcome> unassign(String userId) async {
+    final outcome = await queue.mutate(method: 'DELETE', path: '/api/v1/tasks/$taskId/assignees/$userId', data: const {}, label: 'Unassign ${state.task?.identifier ?? 'task'}');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> addSubtask(String title) async {
-    await api.dio.post('/api/v1/tasks/$taskId/subtasks', data: {'title': title});
-    await load(quiet: true);
+  Future<MutationOutcome> addSubtask(String title) async {
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/subtasks', data: {'title': title}, label: 'Add subtask to ${state.task?.identifier ?? 'task'}');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> toggleSubtask(SubtaskItem item) async {
-    await api.dio.patch('/api/v1/tasks/$taskId/subtasks/${item.id}', data: {'version': item.version, 'status': item.status == 'done' ? 'open' : 'done'});
-    await load(quiet: true);
+  Future<MutationOutcome> toggleSubtask(SubtaskItem item) async {
+    final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId/subtasks/${item.id}', data: {'version': item.version, 'status': item.status == 'done' ? 'open' : 'done'}, label: 'Update subtask');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> addChecklist(String title) async {
-    await api.dio.post('/api/v1/tasks/$taskId/checklists', data: {'title': title});
-    await load(quiet: true);
+  Future<MutationOutcome> addChecklist(String title) async {
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/checklists', data: {'title': title}, label: 'Add checklist to ${state.task?.identifier ?? 'task'}');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> addChecklistItem(String checklistId, String title) async {
-    await api.dio.post('/api/v1/tasks/$taskId/checklists/$checklistId/items', data: {'title': title});
-    await load(quiet: true);
+  Future<MutationOutcome> addChecklistItem(String checklistId, String title) async {
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/checklists/$checklistId/items', data: {'title': title}, label: 'Add checklist item');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 
-  Future<void> toggleChecklistItem(String checklistId, ChecklistItemModel item) async {
-    await api.dio.patch('/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}', data: {'version': item.version, 'completed': !item.completed});
-    await load(quiet: true);
+  Future<MutationOutcome> toggleChecklistItem(String checklistId, ChecklistItemModel item) async {
+    final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}', data: {'version': item.version, 'completed': !item.completed}, label: 'Update checklist item');
+    if (outcome == MutationOutcome.synced) await load(quiet: true);
+    return outcome;
   }
 }
