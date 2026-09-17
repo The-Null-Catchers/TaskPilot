@@ -117,8 +117,11 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                                         onTap: () {
                                           final taskId = item['task_id'] as String?;
                                           final projectId = item['project_id'] as String?;
-                                          if (taskId != null) context.push('/tasks/$taskId');
-                                          else if (projectId != null) context.push('/projects/$projectId');
+                                          if (taskId != null) {
+                                            context.push('/tasks/$taskId');
+                                          } else if (projectId != null) {
+                                            context.push('/projects/$projectId');
+                                          }
                                         },
                                       ),
                                     )),
