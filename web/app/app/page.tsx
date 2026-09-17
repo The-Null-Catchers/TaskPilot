@@ -68,7 +68,7 @@ export default function AppHome(){
      <Link href="/app" className="flex items-center gap-3 rounded-xl bg-indigo-500/10 px-3 py-2.5 font-medium text-indigo-600" onClick={()=>setMobileNav(false)}><LayoutDashboard size={17}/>Projects</Link>
      <Link href="/app/my-tasks" className="flex items-center gap-3 rounded-xl px-3 py-2.5 muted hover:bg-black/5 dark:hover:bg-white/5" onClick={()=>setMobileNav(false)}><ListTodo size={17}/>My Tasks</Link>
      <Link href="/app/notifications" className="flex items-center gap-3 rounded-xl px-3 py-2.5 muted hover:bg-black/5 dark:hover:bg-white/5" onClick={()=>setMobileNav(false)}><Bell size={17}/>Notifications</Link>
-     <span className="flex items-center gap-3 rounded-xl px-3 py-2.5 muted"><Settings2 size={17}/>Settings</span>
+     <Link href={workspaceId?`/app/settings/workspaces?workspace=${workspaceId}`:'/app/settings/workspaces'} className="flex items-center gap-3 rounded-xl px-3 py-2.5 muted hover:bg-black/5 dark:hover:bg-white/5" onClick={()=>setMobileNav(false)}><Settings2 size={17}/>Settings</Link>
    </nav>
    <div className="mt-7 flex items-center justify-between px-2"><p className="text-xs font-semibold uppercase tracking-wider muted">Projects</p><button onClick={()=>{setNewProject(true);setMobileNav(false)}} aria-label="Create project"><Plus size={16}/></button></div>
    <div className="mt-2 space-y-1">{projects.data?.map(p=><button key={p.id} onClick={()=>{setProjectId(p.id);setMobileNav(false)}} className={`w-full rounded-xl px-3 py-2 text-left text-sm ${p.id===projectId?'bg-black/5 font-medium dark:bg-white/5':'muted'}`}>{p.name}</button>)}</div>

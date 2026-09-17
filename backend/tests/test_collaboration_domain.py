@@ -11,6 +11,8 @@ from app.domain import can_invite_role, can_manage_member, would_create_dependen
         ("owner", "admin", True),
         ("owner", "member", True),
         ("owner", "guest", True),
+        ("owner", "owner", False),
+        ("admin", "owner", False),
         ("admin", "admin", False),
         ("admin", "member", True),
         ("admin", "guest", True),
@@ -22,15 +24,23 @@ def test_invitation_role_policy(actor: str, requested: str, allowed: bool) -> No
     assert can_invite_role(actor, requested) is allowed
 
 
-def test_admin_cannot_manage_another_admin() -> None:
+def test_admin_cannot_manage_another_admin_or_owner() -> None:
+    assert can_manage_member("admin", "owner", "member") is False
     assert can_manage_member("admin", "admin", "member") is False
     assert can_manage_member("admin", "member", "guest") is True
+    assert can_manage_member("admin", "guest", "member") is True
 
 
 def test_owner_can_manage_non_owner_roles() -> None:
     assert can_manage_member("owner", "admin", "member") is True
     assert can_manage_member("owner", "member", "admin") is True
+    assert can_manage_member("owner", "guest", "member") is True
     assert can_manage_member("owner", "owner", "admin") is False
+
+
+def test_member_and_guest_cannot_manage_members() -> None:
+    assert can_manage_member("member", "guest", "member") is False
+    assert can_manage_member("guest", "member", "guest") is False
 
 
 def test_dependency_cycle_detection() -> None:

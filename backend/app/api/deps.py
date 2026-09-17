@@ -6,7 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.collaboration_models import ProjectMember
+from app.collaboration_models import ProjectMember, WorkspaceArchive
 from app.core.security import decode_access_token
 from app.db import get_db
 from app.models import Project, User, WorkspaceMember
@@ -53,6 +53,8 @@ async def require_workspace(
     workspace_id: UUID,
     user_id: UUID,
     allowed: set[str] | None = None,
+    *,
+    allow_archived: bool = False,
 ) -> str:
     role = await workspace_role(db, workspace_id, user_id)
     if role is None or (allowed is not None and role not in allowed):
@@ -60,6 +62,17 @@ async def require_workspace(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Workspace access denied",
         )
+    if not allow_archived:
+        archived = await db.scalar(
+            select(WorkspaceArchive.workspace_id).where(
+                WorkspaceArchive.workspace_id == workspace_id
+            )
+        )
+        if archived is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Workspace is archived",
+            )
     return role
 
 

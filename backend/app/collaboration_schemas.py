@@ -14,6 +14,17 @@ class WorkspaceUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=120)
 
 
+class WorkspaceLifecycleOut(BaseModel):
+    id: UUID
+    name: str
+    slug: str
+    owner_id: UUID
+    archived_at: datetime
+    archived_by_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WorkspaceMemberOut(BaseModel):
     user_id: UUID
     email: EmailStr
@@ -43,6 +54,14 @@ class WorkspaceInvitationOut(ORMModel):
 
 class WorkspaceInvitationCreated(WorkspaceInvitationOut):
     token: str
+
+
+class WorkspaceInvitationPreview(BaseModel):
+    workspace_id: UUID
+    workspace_name: str
+    email: EmailStr
+    role: WorkspaceRole
+    expires_at: datetime
 
 
 class OwnershipTransferIn(BaseModel):
