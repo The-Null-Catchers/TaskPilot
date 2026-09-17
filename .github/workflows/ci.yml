@@ -60,7 +60,7 @@ jobs:
       - run: pytest -q
 
   web:
-    name: Web typecheck and build
+    name: Web lint, test, typecheck, and build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -71,6 +71,8 @@ jobs:
         with:
           node-version: '22'
       - run: npm install
+      - run: npm run lint
+      - run: npm test
       - run: npm run typecheck
       - run: npm run build
         env:

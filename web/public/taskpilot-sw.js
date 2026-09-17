@@ -2,7 +2,7 @@ self.addEventListener('push', event => {
   let payload = {}
   try {
     payload = event.data ? event.data.json() : {}
-  } catch (_) {
+  } catch {
     payload = { title: 'TaskPilot', body: event.data ? event.data.text() : '' }
   }
   const title = payload.title || 'TaskPilot'
