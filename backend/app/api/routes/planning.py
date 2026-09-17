@@ -10,6 +10,7 @@ from app.api.deps import current_user, require_project, require_workspace
 from app.collaboration_models import ProjectMember, TaskDependency, TaskWatcher
 from app.db import get_db
 from app.models import Project, Task, TaskAssignee, TaskLabel, User, WorkspaceMember
+from app.planning_models import Milestone
 from app.productivity_schemas import CalendarItem, TaskPage, TimelineOut, TimelineTask
 from app.schemas import TaskOut
 
@@ -72,23 +73,13 @@ async def my_tasks(
         query = query.where(Task.project_id == project_id)
     if scope == 'assigned':
         query = query.where(
-            exists(
-                select(TaskAssignee.id).where(
-                    TaskAssignee.task_id == Task.id,
-                    TaskAssignee.user_id == user.id,
-                )
-            )
+            exists(select(TaskAssignee.id).where(TaskAssignee.task_id == Task.id, TaskAssignee.user_id == user.id))
         )
     elif scope == 'created':
         query = query.where(Task.reporter_id == user.id)
     elif scope == 'watching':
         query = query.where(
-            exists(
-                select(TaskWatcher.id).where(
-                    TaskWatcher.task_id == Task.id,
-                    TaskWatcher.user_id == user.id,
-                )
-            )
+            exists(select(TaskWatcher.user_id).where(TaskWatcher.task_id == Task.id, TaskWatcher.user_id == user.id))
         )
     if status:
         query = query.where(Task.status == status)
@@ -99,26 +90,11 @@ async def my_tasks(
     if due_after:
         query = query.where(Task.due_date >= due_after)
     if assignee_id:
-        query = query.where(
-            exists(
-                select(TaskAssignee.id).where(
-                    TaskAssignee.task_id == Task.id,
-                    TaskAssignee.user_id == assignee_id,
-                )
-            )
-        )
+        query = query.where(exists(select(TaskAssignee.id).where(TaskAssignee.task_id == Task.id, TaskAssignee.user_id == assignee_id)))
     if label_id:
-        query = query.where(
-            exists(
-                select(TaskLabel.id).where(
-                    TaskLabel.task_id == Task.id,
-                    TaskLabel.label_id == label_id,
-                )
-            )
-        )
+        query = query.where(exists(select(TaskLabel.id).where(TaskLabel.task_id == Task.id, TaskLabel.label_id == label_id)))
 
-    count_query = select(func.count()).select_from(query.order_by(None).subquery())
-    total = int(await db.scalar(count_query) or 0)
+    total = int(await db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0)
     priority_order = case(
         (Task.priority == 'urgent', 0),
         (Task.priority == 'high', 1),
@@ -126,25 +102,17 @@ async def my_tasks(
         (Task.priority == 'low', 3),
         else_=4,
     )
-    sort_columns = {
+    order = {
         'due_date': Task.due_date,
         'priority': priority_order,
         'created_at': Task.created_at,
         'updated_at': Task.updated_at,
-    }
-    order = sort_columns[sort_by]
+    }[sort_by]
     order = order.desc() if sort_direction == 'desc' else order.asc()
     if sort_by == 'due_date':
         order = order.nulls_last()
-    tasks = list(
-        (await db.scalars(query.order_by(order, Task.id).limit(limit).offset(offset))).all()
-    )
-    return TaskPage(
-        items=[TaskOut.model_validate(task) for task in tasks],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    tasks = list((await db.scalars(query.order_by(order, Task.id).limit(limit).offset(offset))).all())
+    return TaskPage(items=[TaskOut.model_validate(task) for task in tasks], total=total, limit=limit, offset=offset)
 
 
 @router.get('/calendar', response_model=list[CalendarItem])
@@ -153,6 +121,8 @@ async def calendar(
     end: datetime,
     workspace_id: UUID | None = None,
     project_id: UUID | None = None,
+    status: str | None = None,
+    priority: str | None = None,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -170,23 +140,18 @@ async def calendar(
         task_query = task_query.where(Task.workspace_id == workspace_id)
     if project_id:
         task_query = task_query.where(Task.project_id == project_id)
+    if status:
+        task_query = task_query.where(Task.status == status)
+    if priority:
+        task_query = task_query.where(Task.priority == priority)
     tasks = list((await db.scalars(task_query.order_by(Task.due_date))).all())
-
     items = [
         CalendarItem(
-            id=f'task:{task.id}',
-            kind='task',
-            title=task.title,
-            starts_at=task.due_date,
-            workspace_id=task.workspace_id,
-            project_id=task.project_id,
-            task_id=task.id,
-            identifier=task.identifier,
-            priority=task.priority,
-            status=task.status,
+            id=f'task:{task.id}', kind='task', title=task.title, starts_at=task.due_date,
+            workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id,
+            identifier=task.identifier, priority=task.priority, status=task.status,
         )
-        for task in tasks
-        if task.due_date is not None
+        for task in tasks if task.due_date is not None
     ]
 
     project_query = (
@@ -197,12 +162,7 @@ async def calendar(
             Project.due_date.is_not(None),
             or_(
                 WorkspaceMember.role != 'guest',
-                exists(
-                    select(ProjectMember.id).where(
-                        ProjectMember.project_id == Project.id,
-                        ProjectMember.user_id == user.id,
-                    )
-                ),
+                exists(select(ProjectMember.id).where(ProjectMember.project_id == Project.id, ProjectMember.user_id == user.id)),
             ),
         )
     )
@@ -211,67 +171,55 @@ async def calendar(
     if project_id:
         project_query = project_query.where(Project.id == project_id)
     projects = list((await db.scalars(project_query)).all())
+    accessible_project_ids = []
     for project in projects:
+        accessible_project_ids.append(project.id)
         if project.due_date is None:
             continue
         project_due = datetime.combine(project.due_date, time.min, tzinfo=UTC)
         if start <= project_due < end:
-            items.append(
-                CalendarItem(
-                    id=f'project:{project.id}',
-                    kind='project',
-                    title=f'{project.name} deadline',
-                    starts_at=project_due,
-                    workspace_id=project.workspace_id,
-                    project_id=project.id,
-                    status=project.status,
-                )
-            )
+            items.append(CalendarItem(
+                id=f'project:{project.id}', kind='project', title=f'{project.name} deadline', starts_at=project_due,
+                workspace_id=project.workspace_id, project_id=project.id, status=project.status,
+            ))
+
+    milestone_query = select(Milestone).where(Milestone.due_date >= start, Milestone.due_date < end)
+    if project_id:
+        milestone_query = milestone_query.where(Milestone.project_id == project_id)
+    elif accessible_project_ids:
+        milestone_query = milestone_query.where(Milestone.project_id.in_(accessible_project_ids))
+    else:
+        milestone_query = milestone_query.where(Milestone.id.is_(None))
+    if workspace_id:
+        milestone_query = milestone_query.where(Milestone.workspace_id == workspace_id)
+    milestones = list((await db.scalars(milestone_query.order_by(Milestone.due_date))).all())
+    for milestone in milestones:
+        items.append(CalendarItem(
+            id=f'milestone:{milestone.id}', kind='milestone', title=milestone.title, starts_at=milestone.due_date,
+            workspace_id=milestone.workspace_id, project_id=milestone.project_id, status=milestone.status,
+        ))
     return sorted(items, key=lambda item: item.starts_at)
 
 
 @router.get('/projects/{project_id}/timeline', response_model=TimelineOut)
-async def project_timeline(
-    project_id: UUID,
-    user: User = Depends(current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def project_timeline(project_id: UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     await require_project(db, project_id, user.id)
-    tasks = list(
-        (
-            await db.scalars(
-                select(Task)
-                .where(Task.project_id == project_id, Task.deleted_at.is_(None))
-                .order_by(Task.due_date.asc().nulls_last(), Task.created_at)
-            )
-        ).all()
-    )
+    tasks = list((await db.scalars(
+        select(Task).where(Task.project_id == project_id, Task.deleted_at.is_(None)).order_by(Task.due_date.asc().nulls_last(), Task.created_at)
+    )).all())
     task_ids = [task.id for task in tasks]
     dependencies = []
     if task_ids:
-        dependencies = list(
-            (
-                await db.scalars(
-                    select(TaskDependency).where(TaskDependency.blocked_task_id.in_(task_ids))
-                )
-            ).all()
-        )
+        dependencies = list((await db.scalars(select(TaskDependency).where(TaskDependency.blocked_task_id.in_(task_ids)))).all())
     blocked_by: dict[UUID, list[UUID]] = {}
     for dependency in dependencies:
         blocked_by.setdefault(dependency.blocked_task_id, []).append(dependency.blocker_task_id)
+    milestones = list((await db.scalars(select(Milestone).where(Milestone.project_id == project_id).order_by(Milestone.due_date))).all())
     return TimelineOut(
         project_id=project_id,
-        tasks=[
-            TimelineTask(
-                id=task.id,
-                identifier=task.identifier,
-                title=task.title,
-                status=task.status,
-                priority=task.priority,
-                start_at=task.created_at,
-                due_at=task.due_date,
-                blocked_by=blocked_by.get(task.id, []),
-            )
-            for task in tasks
-        ],
+        tasks=[TimelineTask(
+            id=task.id, identifier=task.identifier, title=task.title, status=task.status, priority=task.priority,
+            start_at=task.start_date or task.created_at, due_at=task.due_date, blocked_by=blocked_by.get(task.id, []),
+        ) for task in tasks],
+        milestones=[{"id": item.id, "title": item.title, "due_at": item.due_date, "status": item.status} for item in milestones],
     )
