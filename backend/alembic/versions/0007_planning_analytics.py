@@ -19,6 +19,27 @@ def upgrade() -> None:
     op.create_index("ix_tasks_start_date", "tasks", ["start_date"])
     op.create_index("ix_tasks_completed_at", "tasks", ["completed_at"])
     op.execute("UPDATE tasks SET completed_at = updated_at WHERE status = 'done' AND completed_at IS NULL")
+    op.execute(
+        """
+        CREATE FUNCTION taskpilot_sync_completed_at() RETURNS trigger AS $$
+        BEGIN
+            IF NEW.status = 'done' AND OLD.status IS DISTINCT FROM 'done' THEN
+                NEW.completed_at = CURRENT_TIMESTAMP;
+            ELSIF NEW.status <> 'done' AND OLD.status = 'done' THEN
+                NEW.completed_at = NULL;
+            END IF;
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+    op.execute(
+        """
+        CREATE TRIGGER trg_taskpilot_sync_completed_at
+        BEFORE UPDATE OF status ON tasks
+        FOR EACH ROW EXECUTE FUNCTION taskpilot_sync_completed_at();
+        """
+    )
 
     op.create_table(
         "milestones",
@@ -53,6 +74,8 @@ def downgrade() -> None:
     op.drop_index("ix_milestones_due_date", table_name="milestones")
     op.drop_index("ix_milestones_created_by", table_name="milestones")
     op.drop_table("milestones")
+    op.execute("DROP TRIGGER IF EXISTS trg_taskpilot_sync_completed_at ON tasks")
+    op.execute("DROP FUNCTION IF EXISTS taskpilot_sync_completed_at()")
     op.drop_index("ix_tasks_completed_at", table_name="tasks")
     op.drop_index("ix_tasks_start_date", table_name="tasks")
     op.drop_column("tasks", "completed_at")
