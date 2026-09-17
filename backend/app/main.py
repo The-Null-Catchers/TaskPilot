@@ -12,7 +12,18 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_workspace
-from app.api.routes import activity, admin, analytics, auth, notifications, projects, search, tasks, workspaces
+from app.api.routes import (
+    activity,
+    admin,
+    analytics,
+    auth,
+    notifications,
+    productivity,
+    projects,
+    search,
+    tasks,
+    workspaces,
+)
 from app.core.config import settings
 from app.core.security import decode_access_token
 from app.db import SessionLocal, get_db
@@ -32,7 +43,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TaskPilot API",
-    version="0.1.0",
+    version="0.2.0",
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/v1/docs",
     lifespan=lifespan,
@@ -49,6 +60,7 @@ for router in (
     workspaces.router,
     projects.router,
     tasks.router,
+    productivity.router,
     notifications.router,
     search.router,
     activity.router,
@@ -61,12 +73,30 @@ for router in (
 @app.exception_handler(HTTPException)
 async def http_error(_: Request, exc: HTTPException):
     message = exc.detail if isinstance(exc.detail, str) else "Request failed"
-    return JSONResponse(status_code=exc.status_code, content={"error": {"code": f"HTTP_{exc.status_code}", "message": message, "detail": exc.detail}})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": f"HTTP_{exc.status_code}",
+                "message": message,
+                "detail": exc.detail,
+            }
+        },
+    )
 
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(_: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"error": {"code": "VALIDATION_ERROR", "message": "Request validation failed", "fields": exc.errors()}})
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed",
+                "fields": exc.errors(),
+            }
+        },
+    )
 
 
 @app.get("/health")
