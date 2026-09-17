@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/offline_queue.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/login_screen.dart';
 import 'features/home/home_screen.dart';
 import 'features/notifications/notifications_screen.dart';
 import 'features/projects/board_screen.dart';
 import 'features/projects/projects_screen.dart';
+import 'features/sync/sync_center_screen.dart';
 import 'features/tasks/my_tasks_screen.dart';
 import 'features/tasks/task_detail_screen.dart';
 
@@ -28,6 +30,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/my-tasks', builder: (_, __) => const MyTasksScreen()),
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
+      GoRoute(path: '/sync', builder: (_, __) => const SyncCenterScreen()),
       GoRoute(path: '/workspaces/:workspaceId/projects', builder: (_, state) => ProjectsScreen(workspaceId: state.pathParameters['workspaceId']!)),
       GoRoute(path: '/projects/:projectId', builder: (_, state) => BoardScreen(projectId: state.pathParameters['projectId']!)),
       GoRoute(path: '/tasks/:taskId', builder: (_, state) => TaskDetailScreen(taskId: state.pathParameters['taskId']!)),
@@ -46,6 +49,14 @@ class TaskPilotApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(offlineQueueProvider);
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      if (previous?.authenticated != next.authenticated && !next.loading) {
+        ref.read(offlineQueueProvider.notifier).initialize().then((_) {
+          if (next.authenticated) ref.read(offlineQueueProvider.notifier).sync();
+        });
+      }
+    });
     return MaterialApp.router(
       title: 'TaskPilot',
       debugShowCheckedModeBanner: false,

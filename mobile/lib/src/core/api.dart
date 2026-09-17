@@ -42,10 +42,17 @@ class ApiClient {
     await storage.write(key: 'access_token', value: data['access_token'] as String?);
     final refresh = data['refresh_token'] as String?;
     if (refresh != null) await storage.write(key: 'refresh_token', value: refresh);
+    final user = data['user'];
+    if (user is Map && user['id'] is String) {
+      await storage.write(key: 'current_user_id', value: user['id'] as String);
+    }
   }
+
+  Future<String?> currentUserId() => storage.read(key: 'current_user_id');
 
   Future<void> clearTokens() async {
     await storage.delete(key: 'access_token');
     await storage.delete(key: 'refresh_token');
+    await storage.delete(key: 'current_user_id');
   }
 }

@@ -45,6 +45,23 @@ class TaskItem {
   final String createdAt;
   final String updatedAt;
 
+  TaskItem copyWith({String? columnId,String? title,String? description,String? priority,String? status,double? position,int? version,String? dueDate,bool clearDueDate=false,String? updatedAt}) => TaskItem(
+        id:id,
+        workspaceId:workspaceId,
+        projectId:projectId,
+        columnId:columnId??this.columnId,
+        identifier:identifier,
+        title:title??this.title,
+        description:description??this.description,
+        priority:priority??this.priority,
+        status:status??this.status,
+        position:position??this.position,
+        version:version??this.version,
+        dueDate:clearDueDate?null:dueDate??this.dueDate,
+        createdAt:createdAt,
+        updatedAt:updatedAt??this.updatedAt,
+      );
+
   factory TaskItem.fromJson(Map<String, dynamic> json) => TaskItem(
         id: json['id'] as String,
         workspaceId: json['workspace_id'] as String,

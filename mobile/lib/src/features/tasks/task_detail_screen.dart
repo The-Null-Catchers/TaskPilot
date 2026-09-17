@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/offline_queue.dart';
 import 'task_detail_controller.dart';
 
 class TaskDetailScreen extends ConsumerWidget {
@@ -20,6 +22,14 @@ class TaskDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _showOutcome(BuildContext context, MutationOutcome outcome) {
+    if (outcome == MutationOutcome.synced) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(outcome == MutationOutcome.queued ? 'Saved locally. TaskPilot will sync this change when you reconnect.' : 'This edit conflicts with a newer server version. Review it in Sync Center.'),
+      action: SnackBarAction(label: 'Sync Center', onPressed: () => context.push('/sync')),
+    ));
   }
 
   Future<void> _editTask(BuildContext context, WidgetRef ref, TaskDetailState state) async {
@@ -47,9 +57,10 @@ class TaskDetailScreen extends ConsumerWidget {
     );
     if (save != true || title.text.trim().isEmpty) return;
     try {
-      await ref.read(taskDetailProvider(taskId).notifier).updateTask(title: title.text.trim(), description: description.text.trim(), priority: priority, status: status, dueDate: task.dueDate);
+      final outcome = await ref.read(taskDetailProvider(taskId).notifier).updateTask(title: title.text.trim(), description: description.text.trim(), priority: priority, status: status, dueDate: task.dueDate);
+      if (context.mounted) _showOutcome(context, outcome);
     } catch (_) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task was changed elsewhere or could not be saved.')));
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task could not be saved. Check your permissions and try again.')));
     }
   }
 
@@ -57,7 +68,7 @@ class TaskDetailScreen extends ConsumerWidget {
     final assigned = state.assignees.map((person) => person.id).toSet();
     final available = state.members.where((person) => !assigned.contains(person.id)).toList();
     if (available.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Everyone available is already assigned.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No cached member is available to assign.')));
       return;
     }
     final selected = await showModalBottomSheet<PersonItem>(
@@ -65,7 +76,10 @@ class TaskDetailScreen extends ConsumerWidget {
       showDragHandle: true,
       builder: (context) => SafeArea(child: ListView(shrinkWrap: true, children: [const Padding(padding: EdgeInsets.fromLTRB(20, 4, 20, 10), child: Text('Assign member', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))), ...available.map((person) => ListTile(leading: CircleAvatar(child: Text(person.name.substring(0, 1).toUpperCase())), title: Text(person.name), subtitle: Text(person.email), onTap: () => Navigator.pop(context, person)))])),
     );
-    if (selected != null) await ref.read(taskDetailProvider(taskId).notifier).assign(selected.id);
+    if (selected != null) {
+      final outcome = await ref.read(taskDetailProvider(taskId).notifier).assign(selected.id);
+      if (context.mounted) _showOutcome(context, outcome);
+    }
   }
 
   @override
@@ -75,7 +89,7 @@ class TaskDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(task?.identifier ?? 'Task'),
-        actions: [if (task != null && !state.offline) IconButton(onPressed: () => _editTask(context, ref, state), icon: const Icon(Icons.edit_rounded), tooltip: 'Edit task'), IconButton(onPressed: () => ref.read(taskDetailProvider(taskId).notifier).load(), icon: const Icon(Icons.refresh_rounded))],
+        actions: [if (task != null) IconButton(onPressed: () => _editTask(context, ref, state), icon: const Icon(Icons.edit_rounded), tooltip: 'Edit task'), IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(taskDetailProvider(taskId).notifier).load(); }, icon: const Icon(Icons.refresh_rounded))],
       ),
       body: SafeArea(
         child: state.loading && task == null
@@ -83,28 +97,38 @@ class TaskDetailScreen extends ConsumerWidget {
             : task == null
                 ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(state.error ?? 'Task unavailable.', textAlign: TextAlign.center)))
                 : RefreshIndicator(
-                    onRefresh: () => ref.read(taskDetailProvider(taskId).notifier).load(),
+                    onRefresh: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(taskDetailProvider(taskId).notifier).load(); },
                     child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 40), children: [
-                      if (state.offline) Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.cloud_off_rounded, size: 18), SizedBox(width: 8), Expanded(child: Text('Offline — this task is read-only cached data.'))])),
+                      if (state.offline || state.pendingSync || state.conflict)
+                        InkWell(
+                          onTap: () => context.push('/sync'),
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(color: state.conflict ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)),
+                            child: Row(children: [Icon(state.conflict ? Icons.sync_problem_rounded : state.pendingSync ? Icons.cloud_upload_outlined : Icons.cloud_off_rounded, size: 18), const SizedBox(width: 8), Expanded(child: Text(state.conflict ? 'A local edit conflicts with a newer server version. Tap to review.' : state.pendingSync ? 'Local changes are waiting to sync.' : 'Offline — edits to this existing task will be queued locally.')), const Icon(Icons.chevron_right_rounded)]),
+                          ),
+                        ),
                       Text(task.title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
                       Wrap(spacing: 8, runSpacing: 8, children: [_Chip(label: task.priority, icon: Icons.flag_outlined), _Chip(label: task.status.replaceAll('_', ' '), icon: Icons.track_changes_rounded), if (task.dueDate != null) _Chip(label: 'Due ${task.dueDate!.split('T').first}', icon: Icons.calendar_today_rounded)]),
                       if (task.description.isNotEmpty) ...[const SizedBox(height: 22), Text(task.description, style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5))],
                       const SizedBox(height: 28),
-                      _SectionHeader(title: 'Assignees', icon: Icons.group_outlined, action: state.offline ? null : IconButton(onPressed: () => _assignMember(context, ref, state), icon: const Icon(Icons.person_add_alt_1_rounded))),
+                      _SectionHeader(title: 'Assignees', icon: Icons.group_outlined, action: state.members.isEmpty ? null : IconButton(onPressed: () => _assignMember(context, ref, state), icon: const Icon(Icons.person_add_alt_1_rounded))),
                       const SizedBox(height: 8),
-                      if (state.assignees.isEmpty) const Text('No one assigned yet.') else Wrap(spacing: 8, runSpacing: 8, children: state.assignees.map((person) => InputChip(avatar: CircleAvatar(child: Text(person.name.substring(0, 1).toUpperCase())), label: Text(person.name), onDeleted: state.offline ? null : () => ref.read(taskDetailProvider(taskId).notifier).unassign(person.id))).toList()),
+                      if (state.assignees.isEmpty) const Text('No cached assignees.') else Wrap(spacing: 8, runSpacing: 8, children: state.assignees.map((person) => InputChip(avatar: CircleAvatar(child: Text(person.name.substring(0, 1).toUpperCase())), label: Text(person.name), onDeleted: () async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).unassign(person.id); if (context.mounted) _showOutcome(context, outcome); })).toList()),
                       const SizedBox(height: 28),
-                      _SectionHeader(title: 'Subtasks', icon: Icons.account_tree_outlined, action: state.offline ? null : IconButton(onPressed: () async { final title = await _askText(context, title: 'Add subtask', label: 'Title'); if (title != null && title.isNotEmpty) await ref.read(taskDetailProvider(taskId).notifier).addSubtask(title); }, icon: const Icon(Icons.add_rounded))),
+                      _SectionHeader(title: 'Subtasks', icon: Icons.account_tree_outlined, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'Add subtask', label: 'Title'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addSubtask(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
                       const SizedBox(height: 6),
-                      if (state.subtasks.isEmpty) const Text('Break this task into smaller steps.') else ...state.subtasks.map((item) => CheckboxListTile(contentPadding: EdgeInsets.zero, value: item.status == 'done', title: Text(item.title, style: TextStyle(decoration: item.status == 'done' ? TextDecoration.lineThrough : null)), onChanged: state.offline ? null : (_) => ref.read(taskDetailProvider(taskId).notifier).toggleSubtask(item))),
+                      if (state.subtasks.isEmpty) const Text('No cached subtasks. New subtasks can still be queued offline.') else ...state.subtasks.map((item) => CheckboxListTile(contentPadding: EdgeInsets.zero, value: item.status == 'done', title: Text(item.title, style: TextStyle(decoration: item.status == 'done' ? TextDecoration.lineThrough : null)), onChanged: (_) async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleSubtask(item); if (context.mounted) _showOutcome(context, outcome); })),
                       const SizedBox(height: 24),
-                      _SectionHeader(title: 'Checklists', icon: Icons.checklist_rounded, action: state.offline ? null : IconButton(onPressed: () async { final title = await _askText(context, title: 'New checklist', label: 'Checklist title', maxLength: 160); if (title != null && title.isNotEmpty) await ref.read(taskDetailProvider(taskId).notifier).addChecklist(title); }, icon: const Icon(Icons.add_rounded))),
-                      ...state.checklists.map((checklist) => Card(elevation: 0, margin: const EdgeInsets.only(top: 10), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Expanded(child: Text(checklist.title, style: const TextStyle(fontWeight: FontWeight.w700))), if (!state.offline) IconButton(onPressed: () async { final title = await _askText(context, title: 'Checklist item', label: 'Item'); if (title != null && title.isNotEmpty) await ref.read(taskDetailProvider(taskId).notifier).addChecklistItem(checklist.id, title); }, icon: const Icon(Icons.add_rounded), tooltip: 'Add item')]), ...checklist.items.map((item) => CheckboxListTile(dense: true, contentPadding: EdgeInsets.zero, value: item.completed, title: Text(item.title, style: TextStyle(decoration: item.completed ? TextDecoration.lineThrough : null)), onChanged: state.offline ? null : (_) => ref.read(taskDetailProvider(taskId).notifier).toggleChecklistItem(checklist.id, item)))])))),
+                      _SectionHeader(title: 'Checklists', icon: Icons.checklist_rounded, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'New checklist', label: 'Checklist title', maxLength: 160); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklist(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
+                      ...state.checklists.map((checklist) => Card(elevation: 0, margin: const EdgeInsets.only(top: 10), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Expanded(child: Text(checklist.title, style: const TextStyle(fontWeight: FontWeight.w700))), IconButton(onPressed: () async { final title = await _askText(context, title: 'Checklist item', label: 'Item'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklistItem(checklist.id, title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded), tooltip: 'Add item')]), ...checklist.items.map((item) => CheckboxListTile(dense: true, contentPadding: EdgeInsets.zero, value: item.completed, title: Text(item.title, style: TextStyle(decoration: item.completed ? TextDecoration.lineThrough : null)), onChanged: (_) async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleChecklistItem(checklist.id, item); if (context.mounted) _showOutcome(context, outcome); }))])))),
                       const SizedBox(height: 28),
-                      _SectionHeader(title: 'Discussion', icon: Icons.chat_bubble_outline_rounded, action: state.offline ? null : IconButton(onPressed: () async { final body = await _askText(context, title: 'Comment', label: 'Write a comment…', maxLength: 20000); if (body != null && body.isNotEmpty) await ref.read(taskDetailProvider(taskId).notifier).addComment(body); }, icon: const Icon(Icons.add_comment_rounded))),
+                      _SectionHeader(title: 'Discussion', icon: Icons.chat_bubble_outline_rounded, action: IconButton(onPressed: () async { final body = await _askText(context, title: 'Comment', label: 'Write a comment…', maxLength: 20000); if (body != null && body.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addComment(body); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_comment_rounded))),
                       const SizedBox(height: 8),
-                      if (state.comments.isEmpty) const Text('No comments yet.') else ...state.comments.map((comment) => Card(elevation: 0, margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(comment.body), const SizedBox(height: 8), Text(DateTime.parse(comment.createdAt).toLocal().toString().split('.').first, style: Theme.of(context).textTheme.labelSmall)])))),
+                      if (state.comments.isEmpty) const Text('No cached comments. New comments can still be queued offline.') else ...state.comments.map((comment) => Card(elevation: 0, margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(comment.body), const SizedBox(height: 8), Text(DateTime.parse(comment.createdAt).toLocal().toString().split('.').first, style: Theme.of(context).textTheme.labelSmall)])))),
                     ]),
                   ),
       ),

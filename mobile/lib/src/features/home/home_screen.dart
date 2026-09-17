@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/offline_queue.dart';
 import '../auth/auth_controller.dart';
 import 'home_controller.dart';
 
@@ -32,20 +33,54 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(homeProvider);
+    final sync = ref.watch(offlineQueueProvider);
+    final syncCount = sync.items.length;
     return Scaffold(
       appBar: AppBar(
         title: const Text('TaskPilot'),
         actions: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(onPressed: () => context.push('/sync'), icon: Icon(sync.conflictCount > 0 ? Icons.sync_problem_rounded : Icons.cloud_sync_outlined), tooltip: 'Sync Center'),
+              if (syncCount > 0)
+                Positioned(
+                  right: 3,
+                  top: 3,
+                  child: Container(
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: sync.conflictCount > 0 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(syncCount > 99 ? '99+' : '$syncCount', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+            ],
+          ),
           IconButton(onPressed: () => context.push('/notifications'), icon: const Icon(Icons.notifications_none_rounded), tooltip: 'Notifications'),
-          IconButton(onPressed: () => ref.read(homeProvider.notifier).load(), icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh'),
+          IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(homeProvider.notifier).load(); }, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh & sync'),
           IconButton(onPressed: () => ref.read(authProvider.notifier).logout(), icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
         ],
       ),
       floatingActionButton: state.offline ? null : FloatingActionButton(onPressed: () => _createWorkspace(context, ref), tooltip: 'Create workspace', child: const Icon(Icons.add_rounded)),
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => ref.read(homeProvider.notifier).load(),
+          onRefresh: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(homeProvider.notifier).load(); },
           child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 96), children: [
+            if (sync.items.isNotEmpty)
+              InkWell(
+                onTap: () => context.push('/sync'),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: (sync.conflictCount > 0 ? Theme.of(context).colorScheme.errorContainer : Theme.of(context).colorScheme.primaryContainer), borderRadius: BorderRadius.circular(14)),
+                  child: Row(children: [Icon(sync.conflictCount > 0 ? Icons.warning_amber_rounded : Icons.sync_rounded, size: 18), const SizedBox(width: 8), Expanded(child: Text(sync.conflictCount > 0 ? '${sync.conflictCount} offline conflict${sync.conflictCount == 1 ? '' : 's'} need review.' : '${sync.pendingCount} offline change${sync.pendingCount == 1 ? '' : 's'} waiting to sync.')), const Icon(Icons.chevron_right_rounded)]),
+                ),
+              ),
             if (state.offline) Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.cloud_off_rounded, size: 18), SizedBox(width: 8), Expanded(child: Text('Offline — showing cached workspace data.'))])),
             Text('Good to see you', style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 6),
