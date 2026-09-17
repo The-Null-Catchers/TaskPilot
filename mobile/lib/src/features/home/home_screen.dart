@@ -39,6 +39,7 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('TaskPilot'),
         actions: [
+          IconButton(onPressed: () => context.push('/search'), icon: const Icon(Icons.search_rounded), tooltip: 'Search'),
           Stack(
             clipBehavior: Clip.none,
             children: [
@@ -88,6 +89,12 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             Row(children: [
               Expanded(child: _QuickAction(icon: Icons.task_alt_rounded, label: 'My Tasks', onTap: () => context.push('/my-tasks'))),
+              const SizedBox(width: 10),
+              Expanded(child: _QuickAction(icon: Icons.calendar_month_rounded, label: 'Calendar', onTap: () => context.push('/calendar'))),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _QuickAction(icon: Icons.search_rounded, label: 'Search', onTap: () => context.push('/search'))),
               const SizedBox(width: 10),
               Expanded(child: _QuickAction(icon: Icons.notifications_active_outlined, label: 'Notifications', onTap: () => context.push('/notifications'))),
             ]),
