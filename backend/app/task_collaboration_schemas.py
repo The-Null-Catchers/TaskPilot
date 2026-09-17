@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.collaboration_schemas import UserSummary
 from app.schemas import ORMModel, TaskOut
 
 
