@@ -157,7 +157,7 @@ class TaskCustomFieldValue(BaseModel):
 
 class CalendarItem(BaseModel):
     id: str
-    kind: Literal["task", "project"]
+    kind: Literal["task", "project", "milestone"]
     title: str
     starts_at: datetime
     workspace_id: UUID
@@ -179,6 +179,14 @@ class TimelineTask(BaseModel):
     blocked_by: list[UUID] = Field(default_factory=list)
 
 
+class TimelineMilestone(BaseModel):
+    id: UUID
+    title: str
+    due_at: datetime
+    status: str
+
+
 class TimelineOut(BaseModel):
     project_id: UUID
     tasks: list[TimelineTask]
+    milestones: list[TimelineMilestone] = Field(default_factory=list)
