@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas import TaskOut
+from app.schemas import ORMModel, TaskOut
 
 DisplayMode = Literal["list", "board", "calendar"]
 SortDirection = Literal["asc", "desc"]
@@ -57,7 +57,7 @@ class FavoriteCreate(BaseModel):
     entity_id: UUID
 
 
-class FavoriteOut(BaseModel):
+class FavoriteOut(ORMModel):
     id: UUID
     workspace_id: UUID
     entity_type: str
@@ -71,7 +71,7 @@ class RecentItemCreate(BaseModel):
     entity_id: UUID
 
 
-class RecentItemOut(BaseModel):
+class RecentItemOut(ORMModel):
     id: UUID
     workspace_id: UUID
     entity_type: str
