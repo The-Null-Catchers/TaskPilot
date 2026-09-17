@@ -1,0 +1,74 @@
+name: TaskPilot CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install '.[dev]'
+      - run: ruff check app tests
+      - run: pytest -q
+
+  web:
+    name: Web typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000
+
+  flutter:
+    name: Flutter analyze, test, and Android builds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android host project without overwriting app sources
+        run: |
+          flutter create /tmp/taskpilot_host --platforms=android --project-name=taskpilot_mobile --org=dev.taskpilot
+          cp -R /tmp/taskpilot_host/android ./android
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build apk --release --dart-define=API_URL=https://api.example.com
+      - run: flutter build appbundle --release --dart-define=API_URL=https://api.example.com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskpilot-android
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-release.apk
+            mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

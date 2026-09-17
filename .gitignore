@@ -1,0 +1,24 @@
+# env
+.env
+.env.*
+!.env.example
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+# Node
+node_modules/
+.next/
+out/
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/android/.gradle/
+mobile/.flutter-plugins*
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+# uploads
+storage/

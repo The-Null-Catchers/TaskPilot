@@ -1,0 +1,23 @@
+name: taskpilot_mobile
+description: Native Flutter client for TaskPilot.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  dio: ^5.7.0
+  go_router: ^14.6.2
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.4
+  web_socket_channel: ^3.0.1
+  intl: ^0.20.1
+  cupertino_icons: ^1.0.8
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true

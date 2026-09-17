@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: taskpilot
+      POSTGRES_USER: taskpilot
+      POSTGRES_PASSWORD: taskpilot
+    ports: ["5432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-taskpilot}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-taskpilot-dev-password}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio_data:/data"]
+  backend:
+    build: ./backend
+    env_file: .env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes: ["./backend:/app"]
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+  worker:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.worker.celery worker --loglevel=INFO
+    volumes: ["./backend:/app"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+  beat:
+    build: ./backend
+    env_file: .env
+    command: celery -A app.worker.celery beat --loglevel=INFO
+    volumes: ["./backend:/app"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+  web:
+    build: ./web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [backend]
+volumes:
+  postgres_data:
+  minio_data:
