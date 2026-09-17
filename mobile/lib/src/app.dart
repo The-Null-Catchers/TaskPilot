@@ -50,6 +50,13 @@ class TaskPilotApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(offlineQueueProvider);
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      if (previous?.authenticated != next.authenticated && !next.loading) {
+        ref.read(offlineQueueProvider.notifier).initialize().then((_) {
+          if (next.authenticated) ref.read(offlineQueueProvider.notifier).sync();
+        });
+      }
+    });
     return MaterialApp.router(
       title: 'TaskPilot',
       debugShowCheckedModeBanner: false,
