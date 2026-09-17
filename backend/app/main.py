@@ -18,9 +18,11 @@ from app.api.routes import (
     analytics,
     auth,
     notifications,
-    productivity,
+    personalization,
+    planning,
     projects,
     search,
+    task_productivity,
     tasks,
     workspaces,
 )
@@ -30,56 +32,58 @@ from app.db import SessionLocal, get_db
 from app.models import User
 from app.realtime import channel
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-logger = logging.getLogger("taskpilot")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
+logger = logging.getLogger('taskpilot')
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.app_env == "production" and settings.jwt_secret == "development-only-change-me":
-        raise RuntimeError("JWT_SECRET must be changed in production")
+    if settings.app_env == 'production' and settings.jwt_secret == 'development-only-change-me':
+        raise RuntimeError('JWT_SECRET must be changed in production')
     yield
 
 
 app = FastAPI(
-    title="TaskPilot API",
-    version="0.2.0",
-    openapi_url="/api/v1/openapi.json",
-    docs_url="/api/v1/docs",
+    title='TaskPilot API',
+    version='0.2.0',
+    openapi_url='/api/v1/openapi.json',
+    docs_url='/api/v1/docs',
     lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
 for router in (
     auth.router,
     workspaces.router,
     projects.router,
     tasks.router,
-    productivity.router,
+    planning.router,
+    personalization.router,
+    task_productivity.router,
     notifications.router,
     search.router,
     activity.router,
     analytics.router,
     admin.router,
 ):
-    app.include_router(router, prefix="/api/v1")
+    app.include_router(router, prefix='/api/v1')
 
 
 @app.exception_handler(HTTPException)
 async def http_error(_: Request, exc: HTTPException):
-    message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    message = exc.detail if isinstance(exc.detail, str) else 'Request failed'
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "error": {
-                "code": f"HTTP_{exc.status_code}",
-                "message": message,
-                "detail": exc.detail,
+            'error': {
+                'code': f'HTTP_{exc.status_code}',
+                'message': message,
+                'detail': exc.detail,
             }
         },
     )
@@ -90,37 +94,37 @@ async def validation_error(_: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
         content={
-            "error": {
-                "code": "VALIDATION_ERROR",
-                "message": "Request validation failed",
-                "fields": exc.errors(),
+            'error': {
+                'code': 'VALIDATION_ERROR',
+                'message': 'Request validation failed',
+                'fields': exc.errors(),
             }
         },
     )
 
 
-@app.get("/health")
+@app.get('/health')
 async def health(db: AsyncSession = Depends(get_db)):
-    checks = {"api": "ok", "database": "error", "redis": "error"}
+    checks = {'api': 'ok', 'database': 'error', 'redis': 'error'}
     try:
-        await db.execute(text("SELECT 1"))
-        checks["database"] = "ok"
+        await db.execute(text('SELECT 1'))
+        checks['database'] = 'ok'
     except Exception:
-        logger.exception("Database health check failed")
+        logger.exception('Database health check failed')
     redis = Redis.from_url(settings.redis_url)
     try:
         await redis.ping()
-        checks["redis"] = "ok"
+        checks['redis'] = 'ok'
     except Exception:
-        logger.exception("Redis health check failed")
+        logger.exception('Redis health check failed')
     finally:
         await redis.aclose()
-    if "error" in checks.values():
+    if 'error' in checks.values():
         raise HTTPException(status_code=503, detail=checks)
     return checks
 
 
-@app.websocket("/api/v1/ws/workspaces/{workspace_id}")
+@app.websocket('/api/v1/ws/workspaces/{workspace_id}')
 async def workspace_socket(websocket: WebSocket, workspace_id: str, token: str):
     from uuid import UUID
 
@@ -147,12 +151,12 @@ async def workspace_socket(websocket: WebSocket, workspace_id: str, token: str):
         await pubsub.subscribe(channel(wid))
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message and message.get("data"):
-                await websocket.send_text(message["data"])
+            if message and message.get('data'):
+                await websocket.send_text(message['data'])
             try:
                 incoming = await asyncio.wait_for(websocket.receive_text(), timeout=0.05)
-                if incoming == "ping":
-                    await websocket.send_text(json.dumps({"event": "pong"}))
+                if incoming == 'ping':
+                    await websocket.send_text(json.dumps({'event': 'pong'}))
             except TimeoutError:
                 pass
     except WebSocketDisconnect:
