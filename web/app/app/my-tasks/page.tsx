@@ -1,143 +1,35 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, CalendarDays, Filter, ListTodo, Plus, Save, X } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Columns3, Filter, ListTodo, Rows3, Save } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useAuth } from '@/components/providers'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { request, SavedView, TaskPage, Workspace } from '@/lib/api'
+import { Project, request, SavedView, Task, TaskPage, Workspace, WorkspaceMember } from '@/lib/api'
 
-type Scope = 'assigned'|'created'|'watching'|'all'
-const priorities = ['all','urgent','high','medium','low','none'] as const
-const statuses = ['all','open','in_progress','review','done'] as const
+type Scope='assigned'|'created'|'watching'|'all';type View='list'|'board'|'calendar';type Label={id:string;name:string;color:string}
+const priorities=['all','urgent','high','medium','low','none'] as const;const statuses=['all','open','in_progress','review','done'] as const
+function nice(value:string){return value.replaceAll('_',' ').replace(/\b\w/g,m=>m.toUpperCase())}
 
-function nice(value:string) {
-  return value.replaceAll('_',' ').replace(/\b\w/g, match=>match.toUpperCase())
-}
+function TaskCard({task}:{task:Task}){return <Link href={`/app/tasks/${task.id}`} className="block rounded-xl border border-[var(--line)] bg-[var(--panel)] p-3 hover:-translate-y-px hover:shadow-sm"><div className="flex justify-between gap-3"><span className="text-xs font-semibold muted">{task.identifier}</span><span className="text-[11px] muted">{nice(task.priority)}</span></div><p className="mt-2 text-sm font-medium">{task.title}</p><div className="mt-3 flex justify-between text-[11px] muted"><span>{nice(task.status)}</span><span>{task.due_date?new Date(task.due_date).toLocaleDateString():'No due date'}</span></div></Link>}
 
-export default function MyTasksPage() {
-  const {token,loading}=useAuth()
-  const router=useRouter()
-  const [workspaceId,setWorkspaceId]=useState('')
-  const [scope,setScope]=useState<Scope>('assigned')
-  const [priority,setPriority]=useState<(typeof priorities)[number]>('all')
-  const [status,setStatus]=useState<(typeof statuses)[number]>('all')
-  const [sortBy,setSortBy]=useState<'due_date'|'priority'|'created_at'|'updated_at'>('due_date')
-  const [sortDirection,setSortDirection]=useState<'asc'|'desc'>('asc')
-  const [nextSevenDays,setNextSevenDays]=useState(false)
-  const [saveOpen,setSaveOpen]=useState(false)
-
-  useEffect(()=>{if(!loading&&!token)router.replace('/login')},[loading,token,router])
-
-  const workspaces=useQuery({
-    queryKey:['workspaces'],
-    queryFn:()=>request<Workspace[]>('/api/v1/workspaces',{},token),
-    enabled:!!token,
-  })
-  const savedViews=useQuery({
-    queryKey:['saved-views',workspaceId],
-    queryFn:()=>request<SavedView[]>(`/api/v1/saved-views${workspaceId?`?workspace_id=${workspaceId}`:''}`,{},token),
-    enabled:!!token,
-  })
-
-  const queryString=useMemo(()=>{
-    const params=new URLSearchParams({scope,sort_by:sortBy,sort_direction:sortDirection,limit:'100'})
-    if(workspaceId)params.set('workspace_id',workspaceId)
-    if(priority!=='all')params.set('priority',priority)
-    if(status!=='all')params.set('status',status)
-    if(nextSevenDays){
-      const date=new Date()
-      date.setDate(date.getDate()+7)
-      params.set('due_before',date.toISOString())
-    }
-    return params.toString()
-  },[workspaceId,scope,priority,status,sortBy,sortDirection,nextSevenDays])
-
-  const tasks=useQuery({
-    queryKey:['my-tasks',queryString],
-    queryFn:()=>request<TaskPage>(`/api/v1/my-tasks?${queryString}`,{},token),
-    enabled:!!token,
-  })
-
-  function applySavedView(view:SavedView) {
-    const filters=view.filters as Record<string,unknown>
-    if(typeof filters.scope==='string'&&['assigned','created','watching','all'].includes(filters.scope))setScope(filters.scope as Scope)
-    if(typeof filters.priority==='string'&&priorities.includes(filters.priority as (typeof priorities)[number]))setPriority(filters.priority as (typeof priorities)[number])
-    if(typeof filters.status==='string'&&statuses.includes(filters.status as (typeof statuses)[number]))setStatus(filters.status as (typeof statuses)[number])
-    if(typeof filters.nextSevenDays==='boolean')setNextSevenDays(filters.nextSevenDays)
-    setSortBy(view.sort_by)
-    setSortDirection(view.sort_direction)
-  }
-
-  async function saveView(e:FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if(!token||!workspaceId)return
-    const form=e.currentTarget
-    const data=new FormData(form)
-    await request<SavedView>('/api/v1/saved-views',{
-      method:'POST',
-      body:JSON.stringify({
-        workspace_id:workspaceId,
-        name:String(data.get('name')??'').trim(),
-        filters:{scope,priority,status,nextSevenDays},
-        sort_by:sortBy,
-        sort_direction:sortDirection,
-        display_mode:'list',
-      }),
-    },token)
-    form.reset()
-    setSaveOpen(false)
-    await savedViews.refetch()
-  }
-
-  if(loading||!token)return <div className="grid min-h-screen place-items-center muted">Loading TaskPilot…</div>
-
-  return <main className="min-h-screen bg-[var(--bg)]">
-    <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--panel)]/95 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <Link href="/app" aria-label="Back to projects" className="rounded-xl border border-[var(--line)] p-2"><ArrowLeft size={18}/></Link>
-          <div className="min-w-0"><p className="text-xs muted">Personal workspace</p><h1 className="truncate font-semibold">My Tasks</h1></div>
-        </div>
-        <div className="flex items-center gap-2"><ThemeToggle/><button onClick={()=>setSaveOpen(true)} disabled={!workspaceId} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><Save size={16}/>Save view</button></div>
-      </div>
-    </header>
-
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      <section className="panel rounded-2xl p-4">
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold"><Filter size={17}/>Filters</div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-          <label className="text-xs font-medium muted">Workspace<select value={workspaceId} onChange={e=>setWorkspaceId(e.target.value)} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]"><option value="">All workspaces</option>{workspaces.data?.map(workspace=><option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select></label>
-          <label className="text-xs font-medium muted">Scope<select value={scope} onChange={e=>setScope(e.target.value as Scope)} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]"><option value="assigned">Assigned to me</option><option value="created">Created by me</option><option value="watching">Watching</option><option value="all">All accessible</option></select></label>
-          <label className="text-xs font-medium muted">Status<select value={status} onChange={e=>setStatus(e.target.value as (typeof statuses)[number])} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]">{statuses.map(item=><option key={item} value={item}>{nice(item)}</option>)}</select></label>
-          <label className="text-xs font-medium muted">Priority<select value={priority} onChange={e=>setPriority(e.target.value as (typeof priorities)[number])} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]">{priorities.map(item=><option key={item} value={item}>{nice(item)}</option>)}</select></label>
-          <label className="text-xs font-medium muted">Sort<select value={sortBy} onChange={e=>setSortBy(e.target.value as typeof sortBy)} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]"><option value="due_date">Due date</option><option value="priority">Priority</option><option value="created_at">Created</option><option value="updated_at">Updated</option></select></label>
-          <label className="text-xs font-medium muted">Direction<select value={sortDirection} onChange={e=>setSortDirection(e.target.value as 'asc'|'desc')} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm text-[var(--fg)]"><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button onClick={()=>setNextSevenDays(value=>!value)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${nextSevenDays?'border-indigo-500 bg-indigo-500/10 text-indigo-600':'border-[var(--line)] muted'}`}><CalendarDays size={14} className="mr-1.5 inline"/>Due in 7 days</button>
-          {savedViews.data?.map(view=><button key={view.id} onClick={()=>applySavedView(view)} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-medium">{view.name}</button>)}
-        </div>
-      </section>
-
-      <div className="mt-6 flex items-end justify-between gap-3"><div><p className="text-sm muted">{tasks.data?.total??0} matching tasks</p><h2 className="text-xl font-semibold tracking-tight">Work queue</h2></div></div>
-
-      <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel)]">
-        {tasks.isLoading&&<div className="p-8 text-center text-sm muted">Loading tasks…</div>}
-        {tasks.isError&&<div className="p-8 text-center text-sm text-red-600">Could not load tasks.</div>}
-        {tasks.data?.items.map(task=><Link href={`/app/tasks/${task.id}`} key={task.id} className="grid gap-3 border-b border-[var(--line)] p-4 last:border-b-0 hover:bg-black/[.025] dark:hover:bg-white/[.025] sm:grid-cols-[110px_1fr_130px_140px] sm:items-center">
-          <span className="text-xs font-semibold muted">{task.identifier}</span>
-          <div className="min-w-0"><p className="truncate text-sm font-medium">{task.title}</p><p className="mt-1 text-xs muted">Updated {new Date(task.updated_at).toLocaleDateString()}</p></div>
-          <span className="w-fit rounded-full bg-black/5 px-2.5 py-1 text-xs dark:bg-white/5">{nice(task.priority)}</span>
-          <span className={`text-xs ${task.due_date&&new Date(task.due_date)<new Date()&&task.status!=='done'?'font-semibold text-red-600':'muted'}`}>{task.due_date?`Due ${new Date(task.due_date).toLocaleDateString()}`:'No due date'}</span>
-        </Link>)}
-        {tasks.data?.items.length===0&&<div className="p-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-600"><ListTodo/></div><h3 className="mt-4 font-semibold">Nothing matches this view</h3><p className="mt-1 text-sm muted">Adjust the filters or pick a different saved view.</p></div>}
-      </section>
-    </div>
-
-    {saveOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4" onMouseDown={()=>setSaveOpen(false)}><form onSubmit={saveView} onMouseDown={e=>e.stopPropagation()} className="panel w-full max-w-md rounded-2xl p-6"><div className="flex items-center justify-between"><div><p className="text-xs muted">Reusable filter</p><h2 className="text-lg font-semibold">Save this view</h2></div><button type="button" onClick={()=>setSaveOpen(false)} className="rounded-xl border border-[var(--line)] p-2"><X size={17}/></button></div><label className="mt-5 block text-sm font-medium">Name<input autoFocus required name="name" maxLength={120} placeholder="My critical tasks" className="mt-2 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-3 outline-none focus:border-indigo-500"/></label><p className="mt-3 text-xs muted">Saved views keep the current scope, status, priority, deadline filter, and sorting.</p><div className="mt-6 flex justify-end"><button className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={16}/>Save view</button></div></form></div>}
-  </main>
+export default function MyTasksPage(){
+ const {token,loading}=useAuth();const router=useRouter();const [workspaceId,setWorkspaceId]=useState('');const [projectId,setProjectId]=useState('');const [scope,setScope]=useState<Scope>('assigned');const [priority,setPriority]=useState<(typeof priorities)[number]>('all');const [status,setStatus]=useState<(typeof statuses)[number]>('all');const [assigneeId,setAssigneeId]=useState('');const [labelId,setLabelId]=useState('');const [sortBy,setSortBy]=useState<'due_date'|'priority'|'created_at'|'updated_at'>('due_date');const [sortDirection,setSortDirection]=useState<'asc'|'desc'>('asc');const [view,setView]=useState<View>('list')
+ useEffect(()=>{if(!loading&&!token)router.replace('/login')},[loading,token,router])
+ const workspaces=useQuery({queryKey:['workspaces'],queryFn:()=>request<Workspace[]>('/api/v1/workspaces',{},token),enabled:!!token})
+ const projects=useQuery({queryKey:['mytasks-projects',workspaceId],queryFn:()=>request<Project[]>(`/api/v1/projects?workspace_id=${workspaceId}`,{},token),enabled:!!token&&!!workspaceId})
+ const members=useQuery({queryKey:['mytasks-members',workspaceId],queryFn:()=>request<WorkspaceMember[]>(`/api/v1/workspaces/${workspaceId}/members`,{},token),enabled:!!token&&!!workspaceId})
+ const labels=useQuery({queryKey:['mytasks-labels',workspaceId],queryFn:()=>request<Label[]>(`/api/v1/workspaces/${workspaceId}/labels`,{},token),enabled:!!token&&!!workspaceId})
+ const savedViews=useQuery({queryKey:['saved-views',workspaceId],queryFn:()=>request<SavedView[]>(`/api/v1/saved-views${workspaceId?`?workspace_id=${workspaceId}`:''}`,{},token),enabled:!!token})
+ const queryString=useMemo(()=>{const p=new URLSearchParams({scope,sort_by:sortBy,sort_direction:sortDirection,limit:'100'});if(workspaceId)p.set('workspace_id',workspaceId);if(projectId)p.set('project_id',projectId);if(priority!=='all')p.set('priority',priority);if(status!=='all')p.set('status',status);if(assigneeId)p.set('assignee_id',assigneeId);if(labelId)p.set('label_id',labelId);return p.toString()},[workspaceId,projectId,scope,priority,status,assigneeId,labelId,sortBy,sortDirection])
+ const tasks=useQuery({queryKey:['my-tasks',queryString],queryFn:()=>request<TaskPage>(`/api/v1/my-tasks?${queryString}`,{},token),enabled:!!token})
+ async function saveView(){if(!token||!workspaceId)return;const name=window.prompt('Saved view name');if(!name?.trim())return;await request('/api/v1/saved-views',{method:'POST',body:JSON.stringify({workspace_id:workspaceId,project_id:projectId||null,name:name.trim(),filters:{scope,priority,status,assigneeId,labelId},sort_by:sortBy,sort_direction:sortDirection,display_mode:view})},token);await savedViews.refetch()}
+ function applySaved(v:SavedView){const f=v.filters as Record<string,unknown>;if(typeof f.scope==='string')setScope(f.scope as Scope);if(typeof f.priority==='string')setPriority(f.priority as typeof priority);if(typeof f.status==='string')setStatus(f.status as typeof status);if(typeof f.assigneeId==='string')setAssigneeId(f.assigneeId);if(typeof f.labelId==='string')setLabelId(f.labelId);if(v.project_id)setProjectId(v.project_id);setSortBy(v.sort_by);setSortDirection(v.sort_direction);setView(v.display_mode as View)}
+ const grouped=useMemo(()=>{const map=new Map<string,Task[]>();for(const s of ['open','in_progress','review','done'])map.set(s,[]);for(const t of tasks.data?.items??[])map.set(t.status,[...(map.get(t.status)??[]),t]);return map},[tasks.data])
+ const calendar=useMemo(()=>{const map=new Map<string,Task[]>();for(const t of tasks.data?.items??[]){if(!t.due_date)continue;const key=new Date(t.due_date).toDateString();map.set(key,[...(map.get(key)??[]),t])}return [...map.entries()].sort((a,b)=>new Date(a[0]).getTime()-new Date(b[0]).getTime())},[tasks.data])
+ if(loading||!token)return <div className="grid min-h-screen place-items-center muted">Loading TaskPilot…</div>
+ return <main className="min-h-screen bg-[var(--bg)]"><header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--panel)]/95 backdrop-blur"><div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6"><div className="flex items-center gap-3"><Link href="/app" className="rounded-xl border border-[var(--line)] p-2"><ArrowLeft size={18}/></Link><div><p className="text-xs muted">Personal workspace</p><h1 className="font-semibold">My Tasks</h1></div></div><div className="flex items-center gap-2"><Link href="/app/calendar" className="rounded-xl border border-[var(--line)] p-2" aria-label="Calendar"><CalendarDays size={18}/></Link><ThemeToggle/><button onClick={()=>void saveView()} disabled={!workspaceId} className="flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-40"><Save size={16}/>Save</button></div></div></header><div className="mx-auto max-w-7xl p-4 sm:p-6"><section className="panel rounded-2xl p-4"><div className="mb-4 flex items-center gap-2 text-sm font-semibold"><Filter size={17}/>Filters</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8"><label className="text-xs muted">Workspace<select value={workspaceId} onChange={e=>{setWorkspaceId(e.target.value);setProjectId('');setAssigneeId('');setLabelId('')}} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="">All</option>{workspaces.data?.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label><label className="text-xs muted">Project<select value={projectId} onChange={e=>setProjectId(e.target.value)} disabled={!workspaceId} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="">All</option>{projects.data?.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label className="text-xs muted">Scope<select value={scope} onChange={e=>setScope(e.target.value as Scope)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="assigned">Assigned</option><option value="created">Created</option><option value="watching">Watching</option><option value="all">All</option></select></label><label className="text-xs muted">Status<select value={status} onChange={e=>setStatus(e.target.value as typeof status)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm">{statuses.map(v=><option key={v} value={v}>{nice(v)}</option>)}</select></label><label className="text-xs muted">Priority<select value={priority} onChange={e=>setPriority(e.target.value as typeof priority)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm">{priorities.map(v=><option key={v} value={v}>{nice(v)}</option>)}</select></label><label className="text-xs muted">Assignee<select value={assigneeId} onChange={e=>setAssigneeId(e.target.value)} disabled={!workspaceId} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="">Any</option>{members.data?.map(m=><option key={m.user_id} value={m.user_id}>{m.name}</option>)}</select></label><label className="text-xs muted">Label<select value={labelId} onChange={e=>setLabelId(e.target.value)} disabled={!workspaceId} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="">Any</option>{labels.data?.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label className="text-xs muted">Sort<select value={`${sortBy}:${sortDirection}`} onChange={e=>{const [a,b]=e.target.value.split(':');setSortBy(a as typeof sortBy);setSortDirection(b as typeof sortDirection)}} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] p-2.5 text-sm"><option value="due_date:asc">Due ↑</option><option value="due_date:desc">Due ↓</option><option value="priority:asc">Priority</option><option value="created_at:desc">Newest</option><option value="updated_at:desc">Updated</option></select></label></div><div className="mt-4 flex flex-wrap gap-2">{savedViews.data?.map(v=><button key={v.id} onClick={()=>applySaved(v)} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs">{v.name}</button>)}</div></section><div className="mt-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm muted">{tasks.data?.total??0} matching tasks</p><h2 className="text-xl font-semibold">Work queue</h2></div><div className="flex rounded-xl border border-[var(--line)] bg-[var(--panel)] p-1"><button onClick={()=>setView('list')} className={`rounded-lg p-2 ${view==='list'?'bg-indigo-600 text-white':'muted'}`} title="List"><Rows3 size={17}/></button><button onClick={()=>setView('board')} className={`rounded-lg p-2 ${view==='board'?'bg-indigo-600 text-white':'muted'}`} title="Board"><Columns3 size={17}/></button><button onClick={()=>setView('calendar')} className={`rounded-lg p-2 ${view==='calendar'?'bg-indigo-600 text-white':'muted'}`} title="Calendar"><CalendarDays size={17}/></button></div></div>{tasks.isLoading&&<div className="mt-4 panel animate-pulse rounded-2xl p-12 text-center text-sm muted">Loading tasks…</div>}{tasks.isError&&<div className="mt-4 rounded-2xl border border-red-300/40 bg-red-500/5 p-6 text-center text-sm text-red-600">Could not load tasks.</div>}{!tasks.isLoading&&!tasks.isError&&view==='list'&&<section className="mt-4 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--panel)]">{tasks.data?.items.map(t=><Link href={`/app/tasks/${t.id}`} key={t.id} className="grid gap-3 border-b border-[var(--line)] p-4 last:border-0 hover:bg-black/[.025] dark:hover:bg-white/[.025] sm:grid-cols-[110px_1fr_130px_150px] sm:items-center"><span className="text-xs font-semibold muted">{t.identifier}</span><span className="truncate text-sm font-medium">{t.title}</span><span className="text-xs muted">{nice(t.priority)}</span><span className="text-xs muted">{t.due_date?new Date(t.due_date).toLocaleDateString():'No due date'}</span></Link>)}</section>}{!tasks.isLoading&&view==='board'&&<section className="mt-4 grid gap-4 lg:grid-cols-4">{['open','in_progress','review','done'].map(s=><div key={s} className="rounded-2xl border border-[var(--line)] bg-black/[.018] p-3 dark:bg-white/[.02]"><div className="mb-3 flex justify-between text-sm font-semibold"><span>{nice(s)}</span><span className="muted">{grouped.get(s)?.length??0}</span></div><div className="space-y-2">{grouped.get(s)?.map(t=><TaskCard key={t.id} task={t}/>)}</div></div>)}</section>}{!tasks.isLoading&&view==='calendar'&&<section className="mt-4 space-y-4">{calendar.map(([day,items])=><div key={day} className="panel rounded-2xl p-4"><h3 className="text-sm font-semibold">{new Date(day).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})}</h3><div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{items.map(t=><TaskCard key={t.id} task={t}/>)}</div></div>)}{calendar.length===0&&<div className="panel rounded-2xl p-12 text-center"><ListTodo className="mx-auto muted"/><h3 className="mt-3 font-semibold">No dated tasks</h3><p className="mt-1 text-sm muted">Tasks without due dates stay available in List and Board views.</p></div>}</section>}{tasks.data?.items.length===0&&<div className="mt-4 panel rounded-2xl p-12 text-center"><ListTodo className="mx-auto muted"/><h3 className="mt-3 font-semibold">Nothing matches this view</h3><p className="mt-1 text-sm muted">Adjust filters or choose a saved view.</p></div>}</div></main>
 }
