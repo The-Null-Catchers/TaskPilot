@@ -9,6 +9,7 @@ from app import (  # noqa: F401
     attachment_models,
     collaboration_models,
     models,
+    planning_models,
     productivity_models,
     task_collaboration_models,
 )
@@ -34,11 +35,7 @@ def run_migrations_offline():
 
 
 def do_run_migrations(connection):
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_type=True,
-    )
+    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
     with context.begin_transaction():
         context.run_migrations()
 
