@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     storage_workspace_quota_bytes: int = 2 * 1024 * 1024 * 1024
     storage_presign_seconds: int = 300
     storage_sse: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str = "TaskPilot <no-reply@taskpilot.local>"
+    smtp_starttls: bool = True
+    account_token_minutes: int = 60
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_workspace
 from app.api.routes import (
+    account,
     activity,
     admin,
     analytics,
@@ -53,7 +54,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title='TaskPilot API',
-    version='0.6.0',
+    version='0.7.0',
     openapi_url='/api/v1/openapi.json',
     docs_url='/api/v1/docs',
     lifespan=lifespan,
@@ -67,6 +68,7 @@ app.add_middleware(
 )
 for router in (
     auth.router,
+    account.router,
     workspaces.router,
     projects.router,
     task_comment_mentions.router,
