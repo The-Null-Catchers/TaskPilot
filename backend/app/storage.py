@@ -1,6 +1,5 @@
 import asyncio
 import io
-from datetime import timedelta
 from urllib.parse import quote
 
 import boto3
@@ -49,31 +48,23 @@ async def ensure_bucket() -> None:
 async def put_bytes(key: str, data: bytes, mime_type: str) -> None:
     await ensure_bucket()
 
-    def action() -> None:
-        _storage_client().put_object(
-            Bucket=settings.storage_bucket,
-            Key=key,
-            Body=data,
-            ContentType=mime_type,
-            ServerSideEncryption="AES256" if settings.storage_sse else None,
-        )
+    def action(use_sse: bool) -> None:
+        params = {
+            "Bucket": settings.storage_bucket,
+            "Key": key,
+            "Body": data,
+            "ContentType": mime_type,
+        }
+        if use_sse:
+            params["ServerSideEncryption"] = "AES256"
+        _storage_client().put_object(**params)
 
     try:
-        await asyncio.to_thread(action)
-    except Exception:
-        if settings.storage_sse:
-            # Some local S3-compatible backends do not support SSE without extra configuration.
-            def fallback() -> None:
-                _storage_client().put_object(
-                    Bucket=settings.storage_bucket,
-                    Key=key,
-                    Body=data,
-                    ContentType=mime_type,
-                )
-
-            await asyncio.to_thread(fallback)
-        else:
+        await asyncio.to_thread(action, settings.storage_sse)
+    except ClientError:
+        if not settings.storage_sse:
             raise
+        await asyncio.to_thread(action, False)
 
 
 async def delete_keys(*keys: str | None) -> None:
@@ -144,7 +135,3 @@ def make_thumbnail(data: bytes, mime_type: str) -> bytes | None:
             return output.getvalue()
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("Invalid or unsafe image") from exc
-
-
-def presign_ttl() -> timedelta:
-    return timedelta(seconds=settings.storage_presign_seconds)
