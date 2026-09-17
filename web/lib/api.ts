@@ -12,6 +12,9 @@ export type Checklist = { id:string; task_id:string; title:string; position:numb
 export type ChecklistItem = { id:string; checklist_id:string; title:string; completed:boolean; assignee_id:string|null; position:number; version:number; created_at:string; updated_at:string }
 export type UserSummary = { id:string; email:string; name:string }
 export type Board = { project:Project; columns:Column[]; tasks:Task[] }
+export type Attachment = { id:string; workspace_id:string; uploader_id:string; task_id:string|null; comment_id:string|null; project_id:string|null; original_name:string; safe_name:string; mime_type:string; size_bytes:number; sha256:string; has_thumbnail:boolean; created_at:string }
+export type AttachmentUrl = { url:string; expires_in:number }
+export type StorageUsage = { workspace_id:string; used_bytes:number; quota_bytes:number; remaining_bytes:number }
 
 export type TaskPage = { items:Task[]; total:number; limit:number; offset:number }
 export type SavedView = { id:string; workspace_id:string; project_id:string|null; name:string; filters:Record<string,unknown>; sort_by:'due_date'|'priority'|'created_at'|'updated_at'; sort_direction:'asc'|'desc'; display_mode:'list'|'board'|'calendar'; created_at:string; updated_at:string }
@@ -39,7 +42,8 @@ export class ApiError extends Error {
 
 export async function request<T>(path:string, init:RequestInit = {}, token?:string|null):Promise<T> {
   const headers = new Headers(init.headers)
-  if (!headers.has('Content-Type') && init.body) headers.set('Content-Type','application/json')
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
+  if (!headers.has('Content-Type') && init.body && !isFormData) headers.set('Content-Type','application/json')
   if (token) headers.set('Authorization',`Bearer ${token}`)
   const response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials:'include', cache:'no-store' })
   if (!response.ok) {

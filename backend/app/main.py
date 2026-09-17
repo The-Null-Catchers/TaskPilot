@@ -16,6 +16,7 @@ from app.api.routes import (
     activity,
     admin,
     analytics,
+    attachments,
     auth,
     notifications,
     personalization,
@@ -40,14 +41,17 @@ logger = logging.getLogger('taskpilot')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if settings.app_env == 'production' and settings.jwt_secret == 'development-only-change-me':
-        raise RuntimeError('JWT_SECRET must be changed in production')
+    if settings.app_env == 'production':
+        if settings.jwt_secret == 'development-only-change-me':
+            raise RuntimeError('JWT_SECRET must be changed in production')
+        if settings.storage_secret == 'taskpilot-dev-password':
+            raise RuntimeError('STORAGE_SECRET must be changed in production')
     yield
 
 
 app = FastAPI(
     title='TaskPilot API',
-    version='0.3.0',
+    version='0.4.0',
     openapi_url='/api/v1/openapi.json',
     docs_url='/api/v1/docs',
     lifespan=lifespan,
@@ -66,6 +70,7 @@ for router in (
     task_comment_mentions.router,
     tasks.router,
     task_collaboration.router,
+    attachments.router,
     planning.router,
     personalization.router,
     task_productivity.router,
