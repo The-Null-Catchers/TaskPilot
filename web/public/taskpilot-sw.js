@@ -8,8 +8,6 @@ self.addEventListener('push', event => {
   const title = payload.title || 'TaskPilot'
   const options = {
     body: payload.body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
     data: payload.data || {},
     tag: payload.data?.notification_id || undefined,
     renotify: false,
