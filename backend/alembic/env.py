@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app import (  # noqa: F401
+    account_models,
     attachment_models,
     collaboration_models,
     models,
