@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
