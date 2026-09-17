@@ -32,6 +32,16 @@ class Settings(BaseSettings):
     smtp_from_email: str = "TaskPilot <no-reply@taskpilot.local>"
     smtp_starttls: bool = True
     account_token_minutes: int = 60
+    notification_secret: str | None = None
+    webpush_vapid_private_key: str | None = None
+    webpush_vapid_public_key: str | None = None
+    webpush_vapid_subject: str | None = None
+    fcm_service_account_json: str | None = None
+    apns_team_id: str | None = None
+    apns_key_id: str | None = None
+    apns_private_key: str | None = None
+    apns_bundle_id: str | None = None
+    apns_use_sandbox: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

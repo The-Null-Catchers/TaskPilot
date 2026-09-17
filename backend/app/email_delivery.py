@@ -7,10 +7,10 @@ from app.core.config import settings
 logger = logging.getLogger("taskpilot.email")
 
 
-def send_account_email(recipient: str, subject: str, text: str) -> None:
+def send_email(recipient: str, subject: str, text: str) -> bool:
     if not settings.smtp_host:
-        logger.warning("SMTP is not configured; account email was not delivered")
-        return
+        logger.warning("SMTP is not configured; email delivery was skipped")
+        return False
     message = EmailMessage()
     message["From"] = settings.smtp_from_email
     message["To"] = recipient
@@ -22,3 +22,8 @@ def send_account_email(recipient: str, subject: str, text: str) -> None:
         if settings.smtp_username and settings.smtp_password:
             client.login(settings.smtp_username, settings.smtp_password)
         client.send_message(message)
+    return True
+
+
+def send_account_email(recipient: str, subject: str, text: str) -> None:
+    send_email(recipient, subject, text)

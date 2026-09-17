@@ -49,12 +49,14 @@ async def lifespan(app: FastAPI):
             raise RuntimeError('JWT_SECRET must be changed in production')
         if settings.storage_secret == 'taskpilot-dev-password':
             raise RuntimeError('STORAGE_SECRET must be changed in production')
+        if not settings.notification_secret or settings.notification_secret.startswith('change-me'):
+            raise RuntimeError('NOTIFICATION_SECRET must be set to a strong separate secret in production')
     yield
 
 
 app = FastAPI(
     title='TaskPilot API',
-    version='0.7.0',
+    version='0.8.0',
     openapi_url='/api/v1/openapi.json',
     docs_url='/api/v1/docs',
     lifespan=lifespan,

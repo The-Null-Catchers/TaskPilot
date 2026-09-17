@@ -10,6 +10,7 @@ from app import (  # noqa: F401
     attachment_models,
     collaboration_models,
     models,
+    notification_models,
     planning_models,
     productivity_models,
     task_collaboration_models,
