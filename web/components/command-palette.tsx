@@ -1,55 +1,56 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Bell, FolderKanban, ListTodo, Plus, Search } from 'lucide-react'
+import { Bell, CalendarDays, FolderKanban, History, ListTodo, Plus, Search, Star, Users } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { request, SearchResults } from '@/lib/api'
+import { Board, Favorite, Project, RecentItem, request, SearchResults, Workspace } from '@/lib/api'
 
-export function CommandPalette({token,onCreateProject,onSelectProject}:{token:string;onCreateProject:()=>void;onSelectProject:(projectId:string)=>void}) {
+type Props={
+  token:string
+  workspaceId:string
+  projectId:string
+  onCreateProject:()=>void
+  onSelectProject:(projectId:string)=>void
+  onSelectWorkspace:(workspaceId:string)=>void
+}
+
+export function CommandPalette({token,workspaceId,projectId,onCreateProject,onSelectProject,onSelectWorkspace}:Props) {
   const router=useRouter()
   const [open,setOpen]=useState(false)
   const [query,setQuery]=useState('')
+  const [recentSearches,setRecentSearches]=useState<string[]>([])
+  const [creatingTask,setCreatingTask]=useState(false)
+  const [taskTitle,setTaskTitle]=useState('')
   const inputRef=useRef<HTMLInputElement|null>(null)
-  const search=useQuery({
-    queryKey:['global-search',query],
-    queryFn:()=>request<SearchResults>(`/api/v1/search?q=${encodeURIComponent(query.trim())}`,{},token),
-    enabled:open&&query.trim().length>=2,
-    staleTime:15_000,
-  })
+  const search=useQuery({queryKey:['global-search',query],queryFn:()=>request<SearchResults>(`/api/v1/search?q=${encodeURIComponent(query.trim())}`,{},token),enabled:open&&query.trim().length>=2,staleTime:15_000})
+  const workspaces=useQuery({queryKey:['palette-workspaces'],queryFn:()=>request<Workspace[]>('/api/v1/workspaces',{},token),enabled:open})
+  const projects=useQuery({queryKey:['palette-projects',workspaceId],queryFn:()=>request<Project[]>(`/api/v1/projects?workspace_id=${workspaceId}`,{},token),enabled:open&&!!workspaceId})
+  const favorites=useQuery({queryKey:['palette-favorites',workspaceId],queryFn:()=>request<Favorite[]>(`/api/v1/favorites${workspaceId?`?workspace_id=${workspaceId}`:''}`,{},token),enabled:open})
+  const recents=useQuery({queryKey:['palette-recents'],queryFn:()=>request<RecentItem[]>('/api/v1/recent-items?limit=8',{},token),enabled:open})
+  const board=useQuery({queryKey:['palette-board',projectId],queryFn:()=>request<Board>(`/api/v1/projects/${projectId}/board`,{},token),enabled:open&&creatingTask&&!!projectId})
 
-  useEffect(()=>{
-    const handler=(event:KeyboardEvent)=>{
-      if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){
-        event.preventDefault()
-        setOpen(value=>!value)
-      }
-    }
-    window.addEventListener('keydown',handler)
-    return()=>window.removeEventListener('keydown',handler)
-  },[])
-  useEffect(()=>{if(open)setTimeout(()=>inputRef.current?.focus(),0);else setQuery('')},[open])
+  useEffect(()=>{const handler=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='k'){event.preventDefault();setOpen(value=>!value)}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler)},[])
+  useEffect(()=>{if(open){setTimeout(()=>inputRef.current?.focus(),0);const stored=localStorage.getItem('taskpilot.recentSearches');if(stored){try{setRecentSearches(JSON.parse(stored) as string[])}catch{}}}else{setQuery('');setCreatingTask(false);setTaskTitle('')}},[open])
+  const favoriteProjects=useMemo(()=>new Set((favorites.data??[]).filter(f=>f.entity_type==='project'||f.entity_type==='board').map(f=>f.entity_id)),[favorites.data])
 
-  function act(action:()=>void) { action(); setOpen(false) }
+  function rememberSearch(){const value=query.trim();if(value.length<2)return;const next=[value,...recentSearches.filter(item=>item!==value)].slice(0,5);setRecentSearches(next);localStorage.setItem('taskpilot.recentSearches',JSON.stringify(next))}
+  function act(action:()=>void,remember=false){if(remember)rememberSearch();action();setOpen(false)}
+  async function createTask(){if(!taskTitle.trim()||!projectId||!board.data?.columns[0])return;const task=await request<{id:string}>('/api/v1/tasks',{method:'POST',body:JSON.stringify({project_id:projectId,column_id:board.data.columns[0].id,title:taskTitle.trim()})},token);setOpen(false);router.push(`/app/tasks/${task.id}`)}
+  function openRecent(item:RecentItem){if(item.entity_type==='task')act(()=>router.push(`/app/tasks/${item.entity_id}`));else act(()=>onSelectProject(item.entity_id))}
 
   return <>
     <button onClick={()=>setOpen(true)} className="hidden items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm muted sm:flex"><Search size={16}/>Search <kbd className="ml-4 text-xs">⌘K</kbd></button>
-    {open&&<div className="fixed inset-0 z-[70] flex justify-center bg-black/45 px-4 pt-[12vh]" onMouseDown={()=>setOpen(false)}>
-      <section onMouseDown={event=>event.stopPropagation()} className="panel h-fit w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl">
-        <div className="flex items-center gap-3 border-b border-[var(--line)] px-4"><Search size={18} className="muted"/><input ref={inputRef} value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Escape')setOpen(false)}} placeholder="Search tasks, projects, comments, labels…" className="h-14 min-w-0 flex-1 bg-transparent text-sm outline-none"/><kbd className="rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] muted">ESC</kbd></div>
-        <div className="max-h-[62vh] overflow-y-auto p-2">
-          {query.trim().length<2&&<div className="space-y-1"><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Quick actions</p><button onClick={()=>act(onCreateProject)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><Plus size={17}/>Create project</button><button onClick={()=>act(()=>router.push('/app/my-tasks'))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><ListTodo size={17}/>Open My Tasks</button><button onClick={()=>act(()=>router.push('/app/notifications'))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><Bell size={17}/>Open notifications</button></div>}
-          {query.trim().length>=2&&search.isLoading&&<p className="p-6 text-center text-sm muted">Searching…</p>}
-          {query.trim().length>=2&&search.data&&<div className="space-y-4">
-            {search.data.tasks.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Tasks</p>{search.data.tasks.map(task=><button key={task.id} onClick={()=>act(()=>router.push(`/app/tasks/${task.id}`))} className="flex w-full items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><div className="min-w-0"><p className="truncate text-sm font-medium">{task.title}</p><p className="text-xs muted">{task.identifier}</p></div><span className="rounded-full bg-black/5 px-2 py-1 text-[11px] muted dark:bg-white/5">{task.priority}</span></button>)}</div>}
-            {search.data.projects.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Projects</p>{search.data.projects.map(project=><button key={project.id} onClick={()=>act(()=>onSelectProject(project.id))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><FolderKanban size={16}/><div><p className="text-sm font-medium">{project.name}</p><p className="text-xs muted">{project.key}</p></div></button>)}</div>}
-            {search.data.comments.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Comments</p>{search.data.comments.map(comment=><button key={comment.id} onClick={()=>act(()=>router.push(`/app/tasks/${comment.task_id}`))} className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><p className="line-clamp-2 text-sm">{comment.body}</p><p className="mt-1 text-xs muted">in {comment.task_identifier}</p></button>)}</div>}
-            {search.data.labels.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Labels</p><div className="flex flex-wrap gap-2 px-3 pb-2">{search.data.labels.map(label=><span key={label.id} className="rounded-full border border-[var(--line)] px-2.5 py-1 text-xs">{label.name}</span>)}</div></div>}
-            {search.data.tasks.length+search.data.projects.length+search.data.comments.length+search.data.labels.length===0&&<p className="p-8 text-center text-sm muted">No accessible results for “{query}”.</p>}
-          </div>}
-        </div>
-      </section>
-    </div>}
+    {open&&<div className="fixed inset-0 z-[70] flex justify-center bg-black/45 px-4 pt-[8vh]" onMouseDown={()=>setOpen(false)}><section onMouseDown={event=>event.stopPropagation()} className="panel h-fit w-full max-w-2xl overflow-hidden rounded-2xl shadow-2xl"><div className="flex items-center gap-3 border-b border-[var(--line)] px-4"><Search size={18} className="muted"/><input ref={inputRef} value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==='Escape')setOpen(false)}} placeholder="Search tasks, projects, workspaces, comments…" className="h-14 min-w-0 flex-1 bg-transparent text-sm outline-none"/><kbd className="rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] muted">ESC</kbd></div><div className="max-h-[72vh] overflow-y-auto p-2">
+      {creatingTask&&<div className="p-3"><p className="text-xs font-semibold uppercase tracking-wider muted">Create task</p>{projectId?<><input autoFocus value={taskTitle} onChange={e=>setTaskTitle(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void createTask()}} placeholder="Task title" className="mt-3 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-3 text-sm outline-none focus:border-indigo-500"/><div className="mt-3 flex justify-end gap-2"><button onClick={()=>setCreatingTask(false)} className="rounded-xl px-3 py-2 text-sm">Back</button><button onClick={()=>void createTask()} disabled={!taskTitle.trim()||board.isLoading} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Create</button></div></>:<p className="mt-3 text-sm muted">Select a project first.</p>}</div>}
+      {!creatingTask&&query.trim().length<2&&<div className="space-y-4"><div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Quick actions</p><button onClick={()=>setCreatingTask(true)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><Plus size={17}/>Create task</button><button onClick={()=>act(onCreateProject)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><FolderKanban size={17}/>Create project</button><button onClick={()=>act(()=>router.push('/app/my-tasks'))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><ListTodo size={17}/>Open My Tasks</button><button onClick={()=>act(()=>router.push('/app/calendar'))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><CalendarDays size={17}/>Open calendar</button><button onClick={()=>act(()=>router.push('/app/notifications'))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><Bell size={17}/>Open notifications</button></div>
+      {workspaces.data&&workspaces.data.length>1&&<div><p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider muted">Switch workspace</p>{workspaces.data.map(workspace=><button key={workspace.id} onClick={()=>act(()=>onSelectWorkspace(workspace.id))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><Users size={15}/><span className={workspace.id===workspaceId?'font-semibold':''}>{workspace.name}</span></button>)}</div>}
+      {projects.data?.length?<div><p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider muted">Jump to project</p>{projects.data.slice(0,8).map(project=><button key={project.id} onClick={()=>act(()=>onSelectProject(project.id))} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5">{favoriteProjects.has(project.id)?<Star size={15} className="fill-current"/>:<FolderKanban size={15}/>}<span>{project.name}</span><span className="ml-auto text-xs muted">{project.key}</span></button>)}</div>:null}
+      {recents.data?.length?<div><p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider muted">Recently opened</p>{recents.data.map(item=><button key={item.id} onClick={()=>openRecent(item)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/5"><History size={15}/><span className="capitalize">{item.entity_type}</span><span className="ml-auto max-w-44 truncate text-xs muted">{item.entity_id}</span></button>)}</div>:null}
+      {recentSearches.length?<div><p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider muted">Recent searches</p><div className="flex flex-wrap gap-2 px-3">{recentSearches.map(item=><button key={item} onClick={()=>setQuery(item)} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs">{item}</button>)}</div></div>:null}</div>}
+      {!creatingTask&&query.trim().length>=2&&search.isLoading&&<p className="p-6 text-center text-sm muted">Searching…</p>}
+      {!creatingTask&&query.trim().length>=2&&search.data&&<div className="space-y-4">{search.data.workspaces.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Workspaces</p>{search.data.workspaces.map(workspace=><button key={workspace.id} onClick={()=>act(()=>onSelectWorkspace(workspace.id),true)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><Users size={16}/><span className="text-sm font-medium">{workspace.name}</span></button>)}</div>}{search.data.tasks.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Tasks</p>{search.data.tasks.map(task=><button key={task.id} onClick={()=>act(()=>router.push(`/app/tasks/${task.id}`),true)} className="flex w-full items-center justify-between gap-4 rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><div className="min-w-0"><p className="truncate text-sm font-medium">{task.title}</p><p className="text-xs muted">{task.identifier}</p></div><span className="rounded-full bg-black/5 px-2 py-1 text-[11px] muted dark:bg-white/5">{task.priority}</span></button>)}</div>}{search.data.projects.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Projects</p>{search.data.projects.map(project=><button key={project.id} onClick={()=>act(()=>onSelectProject(project.id),true)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><FolderKanban size={16}/><div><p className="text-sm font-medium">{project.name}</p><p className="text-xs muted">{project.key}</p></div></button>)}</div>}{search.data.comments.length>0&&<div><p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider muted">Comments</p>{search.data.comments.map(comment=><button key={comment.id} onClick={()=>act(()=>router.push(`/app/tasks/${comment.task_id}`),true)} className="w-full rounded-xl px-3 py-2.5 text-left hover:bg-black/5 dark:hover:bg-white/5"><p className="line-clamp-2 text-sm">{comment.body}</p><p className="mt-1 text-xs muted">in {comment.task_identifier}</p></button>)}</div>}{search.data.tasks.length+search.data.projects.length+search.data.workspaces.length+search.data.comments.length+search.data.labels.length===0&&<p className="p-8 text-center text-sm muted">No accessible results for “{query}”.</p>}</div>}
+    </div></section></div>}
   </>
 }
