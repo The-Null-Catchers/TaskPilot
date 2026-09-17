@@ -15,7 +15,7 @@ from app.attachment_schemas import AttachmentOut, AttachmentUrlOut, StorageUsage
 from app.attachment_security import detect_mime, safe_filename
 from app.core.config import settings
 from app.db import get_db
-from app.models import Comment, Project, Task, User, Workspace
+from app.models import Comment, Task, User, Workspace
 from app.storage import delete_keys, make_thumbnail, presigned_download_url, presigned_preview_url, put_bytes
 
 router = APIRouter(prefix="/attachments", tags=["attachments"])
