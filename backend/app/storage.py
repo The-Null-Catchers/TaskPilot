@@ -48,23 +48,18 @@ async def ensure_bucket() -> None:
 async def put_bytes(key: str, data: bytes, mime_type: str) -> None:
     await ensure_bucket()
 
-    def action(use_sse: bool) -> None:
+    def action() -> None:
         params = {
             "Bucket": settings.storage_bucket,
             "Key": key,
             "Body": data,
             "ContentType": mime_type,
         }
-        if use_sse:
+        if settings.storage_sse:
             params["ServerSideEncryption"] = "AES256"
         _storage_client().put_object(**params)
 
-    try:
-        await asyncio.to_thread(action, settings.storage_sse)
-    except ClientError:
-        if not settings.storage_sse:
-            raise
-        await asyncio.to_thread(action, False)
+    await asyncio.to_thread(action)
 
 
 async def delete_keys(*keys: str | None) -> None:
