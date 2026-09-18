@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 
-enum OfflineMutationStatus { pending, conflict, failed }
+enum OfflineMutationStatus { pending, conflict, authRequired, failed }
 enum MutationOutcome { synced, queued, conflict }
 
 class OfflineMutation {
@@ -81,6 +81,8 @@ class OfflineQueueState {
 
   int get pendingCount => items.where((item) => item.status == OfflineMutationStatus.pending).length;
   int get conflictCount => items.where((item) => item.status == OfflineMutationStatus.conflict).length;
+  int get authRequiredCount =>
+      items.where((item) => item.status == OfflineMutationStatus.authRequired).length;
 }
 
 final offlineQueueProvider = StateNotifierProvider<OfflineQueueController, OfflineQueueState>(
@@ -153,7 +155,8 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
       return MutationOutcome.synced;
     } on DioException catch (error) {
       final conflict = error.response?.statusCode == 409;
-      if (!conflict && !_networkFailure(error)) rethrow;
+      final authRequired = error.response?.statusCode == 401;
+      if (!conflict && !authRequired && !_networkFailure(error)) rethrow;
       final mutation = OfflineMutation(
         id: _id(),
         method: method,
@@ -161,8 +164,16 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
         data: Map<String, dynamic>.from(data),
         label: label,
         createdAt: DateTime.now().toUtc(),
-        status: conflict ? OfflineMutationStatus.conflict : OfflineMutationStatus.pending,
-        error: conflict ? 'Server data changed while you were editing.' : null,
+        status: conflict
+            ? OfflineMutationStatus.conflict
+            : authRequired
+                ? OfflineMutationStatus.authRequired
+                : OfflineMutationStatus.pending,
+        error: conflict
+            ? 'Server data changed while you were editing.'
+            : authRequired
+                ? 'Sign in again to sync this change.'
+                : null,
       );
       await _persist([...state.items, mutation]);
       return conflict ? MutationOutcome.conflict : MutationOutcome.queued;
@@ -196,6 +207,11 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
           next.add(mutation.copyWith(
             status: OfflineMutationStatus.conflict,
             error: 'Server data changed while this offline edit was queued.',
+          ));
+        } else if (error.response?.statusCode == 401) {
+          next.add(mutation.copyWith(
+            status: OfflineMutationStatus.authRequired,
+            error: 'Sign in again to sync this queued change.',
           ));
         } else if (_networkFailure(error)) {
           offline = true;
