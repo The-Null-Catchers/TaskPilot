@@ -108,6 +108,33 @@ jobs:
           if-no-files-found: error
 
 
+  flutter-ios:
+    name: Flutter iOS analyze, test, and release build
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS host project without overwriting app sources
+        run: |
+          flutter create /tmp/taskpilot_ios_host --platforms=ios --project-name=taskpilot_mobile --org=dev.taskpilot
+          cp -R /tmp/taskpilot_ios_host/ios ./ios
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build unsigned iOS release
+        run: flutter build ios --release --no-codesign --dart-define=API_URL=https://api.example.com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: taskpilot-ios-unsigned
+          path: mobile/build/ios/iphoneos/Runner.app
+          if-no-files-found: error
+
   docker:
     name: Production Docker build
     runs-on: ubuntu-latest
