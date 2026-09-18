@@ -8,7 +8,7 @@ from sqlalchemy import exists, or_, select
 from app.core.config import settings
 from app.db import SessionLocal
 from app.email_delivery import send_email
-from app.models import Notification, Task, TaskAssignee, User
+from app.models import Notification, Task, TaskAssignee, User, Workspace, WorkspaceInvitation
 from app.notification_delivery import kind_allowed, notification_link, send_notification_email, send_push
 from app.notification_models import (
     NotificationDelivery,
@@ -36,6 +36,10 @@ celery.conf.beat_schedule = {
     "notification-daily-digest": {
         "task": "taskpilot.notification_daily_digest",
         "schedule": crontab(hour=8, minute=10),
+    },
+    "workspace-invitation-delivery": {
+        "task": "taskpilot.invitation_delivery",
+        "schedule": 60.0,
     },
     "webhook-dispatch-minute": {
         "task": "taskpilot.webhook_dispatch",
@@ -341,6 +345,81 @@ async def _send_digest(frequency: str, period: timedelta) -> int:
     return sent
 
 
+async def _deliver_workspace_invitations(limit: int = 50) -> int:
+    if not settings.smtp_host:
+        return 0
+    now = datetime.now(UTC)
+    processed = 0
+    async with SessionLocal() as db:
+        invitations = list(
+            (
+                await db.scalars(
+                    select(WorkspaceInvitation)
+                    .where(
+                        WorkspaceInvitation.accepted_at.is_(None),
+                        WorkspaceInvitation.expires_at > now,
+                        WorkspaceInvitation.delivery_token_ciphertext.is_not(None),
+                        WorkspaceInvitation.delivery_status.in_(["pending", "failed"]),
+                        WorkspaceInvitation.delivery_attempts < 3,
+                    )
+                    .order_by(WorkspaceInvitation.created_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+        )
+        for invitation in invitations:
+            invitation.delivery_attempts += 1
+            workspace = await db.get(Workspace, invitation.workspace_id)
+            if workspace is None:
+                invitation.delivery_status = "failed"
+                invitation.delivery_last_error = "workspace_missing"
+                processed += 1
+                continue
+            try:
+                raw_token = decrypt_text(invitation.delivery_token_ciphertext or "")
+            except ValueError:
+                invitation.delivery_status = "failed"
+                invitation.delivery_last_error = "token_decryption_failed"
+                processed += 1
+                continue
+            invite_url = f"{settings.app_url.rstrip('/')}/invite/{raw_token}"
+            text = "\n".join(
+                [
+                    f"You've been invited to join {workspace.name} on TaskPilot.",
+                    "",
+                    f"Role: {invitation.role}",
+                    f"Invitation expires: {invitation.expires_at.isoformat()}",
+                    "",
+                    f"Accept or reject the invitation: {invite_url}",
+                    "",
+                    "If you were not expecting this invitation, you can ignore this email.",
+                ]
+            )
+            try:
+                delivered = await asyncio.to_thread(
+                    send_email,
+                    invitation.email,
+                    f"Join {workspace.name} on TaskPilot",
+                    text,
+                )
+            except Exception as exc:
+                delivered = False
+                invitation.delivery_last_error = type(exc).__name__[:200]
+            if delivered:
+                invitation.delivery_status = "sent"
+                invitation.delivery_last_error = None
+                invitation.delivered_at = now
+                invitation.delivery_token_ciphertext = None
+            else:
+                invitation.delivery_status = "failed"
+                if invitation.delivery_last_error is None:
+                    invitation.delivery_last_error = "smtp_delivery_failed"
+            processed += 1
+        await db.commit()
+    return processed
+
+
 @celery.task(name="taskpilot.deadline_reminders")
 def deadline_reminders() -> int:
     return asyncio.run(_deadline_reminders())
@@ -361,6 +440,11 @@ def notification_hourly_digest() -> int:
 @celery.task(name="taskpilot.notification_daily_digest")
 def notification_daily_digest() -> int:
     return asyncio.run(_send_digest("daily", timedelta(days=1, hours=1)))
+
+
+@celery.task(name="taskpilot.invitation_delivery")
+def invitation_delivery() -> int:
+    return asyncio.run(_deliver_workspace_invitations())
 
 
 @celery.task(name="taskpilot.webhook_dispatch")
