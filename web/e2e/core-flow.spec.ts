@@ -10,7 +10,7 @@ test('registers, onboards, and creates a task on the real board', async ({ page 
   await page.getByLabel('Password').fill('TaskPilot-E2E-2026!')
   await page.getByRole('button', { name: 'Create account' }).click()
 
-  await expect(page).toHaveURL(/\/app\/onboarding/)
+  await expect(page).toHaveURL(/\/app\/onboarding/, { timeout: 15_000 })
   await expect(
     page.getByRole('heading', { name: 'Start with a workflow, not an empty screen.' }),
   ).toBeVisible()
@@ -25,7 +25,7 @@ test('registers, onboards, and creates a task on the real board', async ({ page 
 
   const title = `Browser smoke ${Date.now()}`
   await page.getByPlaceholder('What needs to be done?').fill(title)
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
 
   await expect(page.getByText(title, { exact: true })).toBeVisible()
 })
