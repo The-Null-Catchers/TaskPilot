@@ -297,6 +297,8 @@ The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot c
 
 Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, Firebase client credential, service-account key, or signing password belongs in the repository. Android production signing/Play internal upload is documented in [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md). The unsigned iOS contributor gate stays in `ci.yml`; production archive/IPA/TestFlight automation is documented in [docs/IOS_RELEASE.md](docs/IOS_RELEASE.md).
 
+A separate manual **TaskPilot deployment smoke** workflow runs the real Playwright collaboration suite against a public resettable demo/staging deployment. It performs health checks first, rejects unsafe/private targets, and preserves Playwright reports as release evidence. See [docs/DEPLOYMENT_SMOKE.md](docs/DEPLOYMENT_SMOKE.md).
+
 ## Production deployment
 
 TaskPilot includes `docker-compose.prod.yml` and a production environment template.
@@ -346,8 +348,8 @@ The canonical implementation is now on `main`; repository cleanup, multi-user E2
 What remains is deployment-specific or genuinely external validation rather than missing core product code:
 
 - inject production Firebase/APNs client/provider credentials and validate foreground/background/terminated push behavior on real Android/iOS devices
-- validate the new MinIO-backed Playwright attachment flow on CI/main and keep the backend attachment IDOR/signed-download regressions as defense-in-depth
-- connect the provider-neutral logging/metrics/error-reporting hooks to the chosen production collectors and configure uptime, readiness, 5xx, p95 latency, PostgreSQL/Redis, Celery, webhook/notification exhaustion, and realtime alerts
+- run the guarded remote deployment-smoke workflow against the actual hosted demo/staging environment once infrastructure is available
+- route the now-deployable Prometheus/Grafana/Loki/Alertmanager reference stack to the chosen real alert destinations and tune thresholds from observed production traffic
 - capture polished screenshots from a real seeded deployment and publish a hosted demo when infrastructure is available
 - make the final licensing decision before external distribution
 - add OAuth/AI/automation integrations only if they are required after the production baseline remains stable
