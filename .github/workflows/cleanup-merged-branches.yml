@@ -1,0 +1,40 @@
+name: Cleanup merged branches
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged PR head branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          gh api --paginate "repos/$REPO/pulls?state=closed&per_page=100" \
+            --jq '.[] | select(.merged_at != null) | .head.ref' \
+            | sort -u \
+            | while IFS= read -r branch; do
+                [ -n "$branch" ] || continue
+                case "$branch" in
+                  main|dependabot/*|backup/*)
+                    echo "Keeping $branch"
+                    continue
+                    ;;
+                esac
+
+                encoded=${branch//\//%2F}
+                if gh api "repos/$REPO/git/ref/heads/$encoded" >/dev/null 2>&1; then
+                  echo "Deleting merged branch: $branch"
+                  gh api --method DELETE "repos/$REPO/git/refs/heads/$encoded"
+                fi
+              done
