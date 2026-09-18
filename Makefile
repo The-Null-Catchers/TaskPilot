@@ -5,7 +5,7 @@ dev:
 	docker compose up --build
 
 demo:
-	docker compose exec backend python scripts/seed_demo.py --reset
+	docker compose exec backend python -m app.demo_seed --reset
 
 down:
 	docker compose down
