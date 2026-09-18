@@ -67,3 +67,71 @@ def test_push_adapters_skip_cleanly_when_not_configured(monkeypatch):
         "skipped",
         "apns_not_configured",
     )
+
+
+
+@pytest.mark.asyncio
+async def test_push_target_ownership_moves_between_accounts(api_client):
+    async def register(email: str, name: str) -> str:
+        response = await api_client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "TaskPilot-test-password!", "name": name},
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["access_token"]
+
+    token_a = await register("push-owner-a@example.com", "Push Owner A")
+    token_b = await register("push-owner-b@example.com", "Push Owner B")
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+    payload = {
+        "channel": "fcm",
+        "target": "same-device-token-for-account-switch",
+        "config": {},
+        "device_name": "TaskPilot Flutter",
+        "platform": "android",
+    }
+
+    first = await api_client.post(
+        "/api/v1/notifications/subscriptions",
+        headers=headers_a,
+        json=payload,
+    )
+    assert first.status_code == 201, first.text
+    first_id = first.json()["id"]
+
+    duplicate = await api_client.post(
+        "/api/v1/notifications/subscriptions",
+        headers=headers_a,
+        json=payload,
+    )
+    assert duplicate.status_code == 201, duplicate.text
+    assert duplicate.json()["id"] == first_id
+
+    transfer = await api_client.post(
+        "/api/v1/notifications/subscriptions",
+        headers=headers_b,
+        json=payload,
+    )
+    assert transfer.status_code == 201, transfer.text
+    assert transfer.json()["id"] != first_id
+
+    old_owner = await api_client.get(
+        "/api/v1/notifications/subscriptions",
+        headers=headers_a,
+    )
+    assert old_owner.status_code == 200, old_owner.text
+    old_subscription = next(item for item in old_owner.json() if item["id"] == first_id)
+    assert old_subscription["revoked_at"] is not None
+
+    new_owner = await api_client.get(
+        "/api/v1/notifications/subscriptions",
+        headers=headers_b,
+    )
+    assert new_owner.status_code == 200, new_owner.text
+    matching = [
+        item
+        for item in new_owner.json()
+        if item["channel"] == "fcm" and item["revoked_at"] is None
+    ]
+    assert len(matching) == 1

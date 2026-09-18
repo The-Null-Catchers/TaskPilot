@@ -89,6 +89,8 @@ class PushRegistrationService {
   }
 
   Future<void> _registerToken(String token) async {
+    final previousSubscriptionId =
+        await api.storage.read(key: 'push_subscription_id');
     final response = await api.dio.post(
       '/api/v1/notifications/subscriptions',
       data: {
@@ -101,8 +103,19 @@ class PushRegistrationService {
     );
     final data = (response.data as Map).cast<String, dynamic>();
     final subscriptionId = data['id'] as String?;
-    if (subscriptionId != null) {
-      await api.storage.write(key: 'push_subscription_id', value: subscriptionId);
+    if (subscriptionId == null) return;
+
+    await api.storage.write(key: 'push_subscription_id', value: subscriptionId);
+    if (previousSubscriptionId != null &&
+        previousSubscriptionId != subscriptionId) {
+      try {
+        await api.dio.delete(
+          '/api/v1/notifications/subscriptions/$previousSubscriptionId',
+        );
+      } catch (_) {
+        // The new token is already active. A stale provider token will also be
+        // revoked server-side if the provider later reports it as gone.
+      }
     }
   }
 

@@ -156,7 +156,7 @@ Notifications support:
 - retryable delivery records
 - deadline reminders through Celery Beat
 
-Push credentials and Firebase client configuration remain deployment secrets and are not committed.
+Push credentials and Firebase client configuration remain deployment secrets and are not committed. See [docs/PUSH_NOTIFICATIONS.md](docs/PUSH_NOTIFICATIONS.md) for the FCM/APNs setup and real-device validation runbook.
 
 ## Invitation delivery
 
