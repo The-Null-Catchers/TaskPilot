@@ -12,7 +12,7 @@ discovery.relabel "taskpilot" {
 
   rule {
     source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
-    regex         = "api|worker|beat|web|minio|postgres|redis"
+    regex         = "backend|worker|beat|web|minio|postgres|redis"
     action        = "keep"
   }
 
