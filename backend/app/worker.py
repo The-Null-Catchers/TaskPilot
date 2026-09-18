@@ -317,6 +317,15 @@ async def _process_pending_deliveries(limit: int = 100) -> int:
                 delivery.next_attempt_at = now + timedelta(minutes=2**delivery.attempts)
             else:
                 delivery.next_attempt_at = None
+                if status == "failed":
+                    logger.error(
+                        "notification_delivery_exhausted",
+                        extra={
+                            "event": "notification_delivery_exhausted",
+                            "channel": delivery.channel,
+                            "attempts": delivery.attempts,
+                        },
+                    )
             processed += 1
         await db.commit()
     return processed

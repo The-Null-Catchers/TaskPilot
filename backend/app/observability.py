@@ -44,6 +44,8 @@ _SAFE_EXTRA_FIELDS = (
     "task_id",
     "task_name",
     "operation",
+    "channel",
+    "attempts",
 )
 
 

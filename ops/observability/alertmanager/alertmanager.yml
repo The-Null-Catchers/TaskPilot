@@ -1,0 +1,12 @@
+route:
+  receiver: operator-config-required
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: operator-config-required
+
+# Replace the no-op receiver above with an approved email, Slack, PagerDuty,
+# Opsgenie, or webhook receiver before relying on alerts in production.

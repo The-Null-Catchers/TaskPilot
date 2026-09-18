@@ -86,3 +86,10 @@ Keep `/health/live` for process liveness and `/health/ready` for dependency-awar
 The API production Compose can run multiple Uvicorn workers. Prometheus Python client process metrics are process-local unless multiprocess mode is configured. For a single API worker, the default endpoint is sufficient. For multiple workers, configure Prometheus multiprocess collection or scrape workers independently through the chosen process manager before treating aggregate counters as authoritative.
 
 This limitation is intentionally documented rather than silently presenting per-process counters as cluster-wide totals.
+
+
+## Deployable reference stack
+
+A runnable Prometheus/Grafana/Loki/Alloy reference deployment now lives in [ops/observability](../ops/observability/README.md). It includes protected API scraping, PostgreSQL and Redis exporters, Celery queue-depth monitoring, Blackbox readiness probes, provisioned Grafana data sources/dashboard, Alertmanager routing, and Loki rules for worker/delivery/storage/realtime failures.
+
+The reference stack is an example integration, not a requirement to self-host. Alert destinations and production credentials stay external to source control.
