@@ -129,6 +129,7 @@ jobs:
           cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
 
           echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
           echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
 
       - name: Archive signed Runner
@@ -149,7 +150,7 @@ jobs:
             CODE_SIGN_IDENTITY="Apple Distribution" \
             OTHER_SWIFT_FLAGS="$(inherited)" \
             FLUTTER_BUILD_MODE=release \
-            DART_DEFINES="$(printf 'API_URL=%s' '${{ inputs.api_url }}' | base64)"
+            DART_DEFINES="$(printf '%s' "API_URL=${{ inputs.api_url }}" | base64)"
 
       - name: Export IPA
         shell: bash
@@ -225,5 +226,7 @@ jobs:
           if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
             security delete-keychain "$SIGNING_KEYCHAIN" || true
           fi
-          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+          if [[ -n "${PROFILE_UUID:-}" ]]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          fi
           rm -rf "$HOME/.appstoreconnect/private_keys"
