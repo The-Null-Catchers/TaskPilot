@@ -6,7 +6,7 @@ import { SafeMarkdown } from './safe-markdown'
 
 describe('SafeMarkdown', () => {
   it('ignores raw HTML instead of rendering executable markup', () => {
-    const source = '# Safe\n\n<script>alert("xss")</script>\n<img src=x onerror=alert(1)>\n\n**content**'
+    const lt = '<'\n    const source = '# Safe\\n\\n' + lt + 'script>alert("xss")' + lt + '/script>\\n' + lt + 'img src=x onerror=alert(1)>\\n\\n**content**'
     const html = renderToStaticMarkup(<SafeMarkdown source={source} />)
 
     expect(html).toContain('Safe')
