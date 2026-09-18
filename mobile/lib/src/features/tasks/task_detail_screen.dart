@@ -126,6 +126,17 @@ class TaskDetailScreen extends ConsumerWidget {
                       _SectionHeader(title: 'Checklists', icon: Icons.checklist_rounded, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'New checklist', label: 'Checklist title', maxLength: 160); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklist(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
                       ...state.checklists.map((checklist) => Card(elevation: 0, margin: const EdgeInsets.only(top: 10), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Expanded(child: Text(checklist.title, style: const TextStyle(fontWeight: FontWeight.w700))), IconButton(onPressed: () async { final title = await _askText(context, title: 'Checklist item', label: 'Item'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklistItem(checklist.id, title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded), tooltip: 'Add item')]), ...checklist.items.map((item) => CheckboxListTile(dense: true, contentPadding: EdgeInsets.zero, value: item.completed, title: Text(item.title, style: TextStyle(decoration: item.completed ? TextDecoration.lineThrough : null)), onChanged: (_) async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleChecklistItem(checklist.id, item); if (context.mounted) _showOutcome(context, outcome); }))])))),
                       const SizedBox(height: 28),
+                      Card(
+                        elevation: 0,
+                        child: ListTile(
+                          leading: const Icon(Icons.attach_file_rounded),
+                          title: const Text('Attachments', style: TextStyle(fontWeight: FontWeight.w700)),
+                          subtitle: const Text('Upload, download, and remove task files'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => context.push('/tasks/$taskId/attachments'),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
                       _SectionHeader(title: 'Discussion', icon: Icons.chat_bubble_outline_rounded, action: IconButton(onPressed: () async { final body = await _askText(context, title: 'Comment', label: 'Write a comment…', maxLength: 20000); if (body != null && body.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addComment(body); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_comment_rounded))),
                       const SizedBox(height: 8),
                       if (state.comments.isEmpty) const Text('No cached comments. New comments can still be queued offline.') else ...state.comments.map((comment) => Card(elevation: 0, margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(comment.body), const SizedBox(height: 8), Text(DateTime.parse(comment.createdAt).toLocal().toString().split('.').first, style: Theme.of(context).textTheme.labelSmall)])))),
