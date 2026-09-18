@@ -15,6 +15,7 @@ from app.core.security import hash_password, new_refresh_token, token_digest, ve
 from app.db import get_db
 from app.email_delivery import send_account_email
 from app.models import Project, Session, User, Workspace
+from app.security_controls import enforce_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["account"])
 
@@ -139,9 +140,17 @@ async def account_status(user: User = Depends(current_user), db: AsyncSession = 
 @router.post("/email-verification/request", status_code=202)
 async def request_email_verification(
     background: BackgroundTasks,
+    request: Request,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        bucket="verify_email_request",
+        limit=5,
+        window_seconds=900,
+        subject=str(user.id),
+    )
     security = await _security(db, user.id)
     if security.email_verified_at is not None:
         return {"message": "Email is already verified"}
@@ -158,6 +167,7 @@ async def confirm_email_verification(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(request, bucket="verify_email_confirm", limit=20, window_seconds=900)
     token = await _consume_token(db, data.token, "verify_email")
     security = await _security(db, token.user_id)
     security.email_verified_at = datetime.now(UTC)
@@ -170,8 +180,17 @@ async def confirm_email_verification(
 async def forgot_password(
     data: ForgotPasswordIn,
     background: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(request, bucket="forgot_password_ip", limit=10, window_seconds=900)
+    await enforce_rate_limit(
+        request,
+        bucket="forgot_password_account",
+        limit=5,
+        window_seconds=900,
+        subject=data.email.lower(),
+    )
     user = await db.scalar(select(User).where(User.email == data.email.lower(), User.is_active.is_(True)))
     raw = None
     if user:
@@ -184,6 +203,7 @@ async def forgot_password(
 
 @router.post("/reset-password", status_code=204)
 async def reset_password(data: ResetPasswordIn, request: Request, db: AsyncSession = Depends(get_db)):
+    await enforce_rate_limit(request, bucket="reset_password", limit=10, window_seconds=900)
     token = await _consume_token(db, data.token, "password_reset")
     user = await db.get(User, token.user_id)
     if not user or not user.is_active:
@@ -206,6 +226,13 @@ async def change_password(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        bucket="change_password",
+        limit=10,
+        window_seconds=900,
+        subject=str(user.id),
+    )
     if not verify_password(data.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     user.password_hash = hash_password(data.new_password)
@@ -344,6 +371,13 @@ async def delete_account(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await enforce_rate_limit(
+        request,
+        bucket="delete_account",
+        limit=5,
+        window_seconds=900,
+        subject=str(user.id),
+    )
     if data.confirmation != "DELETE":
         raise HTTPException(status_code=400, detail="Type DELETE to confirm account deletion")
     if not verify_password(data.password, user.password_hash):
