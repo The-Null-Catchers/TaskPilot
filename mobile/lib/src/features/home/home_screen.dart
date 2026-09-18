@@ -62,6 +62,7 @@ class HomeScreen extends ConsumerWidget {
             ],
           ),
           IconButton(onPressed: () => context.push('/notifications'), icon: const Icon(Icons.notifications_none_rounded), tooltip: 'Notifications'),
+          IconButton(onPressed: () => context.push('/settings/account'), icon: const Icon(Icons.account_circle_outlined), tooltip: 'Profile & settings'),
           IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(homeProvider.notifier).load(); }, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh & sync'),
           IconButton(onPressed: () => ref.read(authProvider.notifier).logout(), icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
         ],
