@@ -79,7 +79,7 @@ Back up at least:
 
 Redis is configured with append-only persistence in the production Compose stack, but it should not be treated as the source of truth for application data.
 
-Test database and object-storage restores periodically. A backup that has never been restored is not a verified backup.
+Test database and object-storage restores periodically. A backup that has never been restored is not a verified backup. The exact backup, restore-drill, data-restore, and rollback procedures are in [BACKUP_RESTORE_ROLLBACK.md](BACKUP_RESTORE_ROLLBACK.md).
 
 ## 7. Updating
 
