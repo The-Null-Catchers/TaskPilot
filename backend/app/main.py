@@ -164,15 +164,27 @@ async def health(db: AsyncSession = Depends(get_db)):
 
 
 @app.websocket('/api/v1/ws/workspaces/{workspace_id}')
-async def workspace_socket(websocket: WebSocket, workspace_id: str, token: str):
+async def workspace_socket(websocket: WebSocket, workspace_id: str):
     from uuid import UUID
 
+    origin = websocket.headers.get("origin")
+    if origin and origin not in settings.cors_origin_list:
+        await websocket.close(code=4403)
+        return
+
+    await websocket.accept()
     try:
+        auth_message = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+        payload = json.loads(auth_message)
+        token = payload.get("token") if payload.get("type") == "auth" else None
+        if not isinstance(token, str) or not token:
+            raise ValueError("Missing WebSocket token")
         user_id = decode_access_token(token)
         wid = UUID(workspace_id)
     except Exception:
         await websocket.close(code=4401)
         return
+
     async with SessionLocal() as db:
         user = await db.get(User, user_id)
         if not user or not user.is_active:
@@ -183,7 +195,7 @@ async def workspace_socket(websocket: WebSocket, workspace_id: str, token: str):
         except HTTPException:
             await websocket.close(code=4403)
             return
-    await websocket.accept()
+
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     pubsub = redis.pubsub()
     try:
