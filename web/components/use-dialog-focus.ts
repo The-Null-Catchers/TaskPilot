@@ -20,9 +20,6 @@ export function useDialogFocus<T extends HTMLElement>(
 
     const dialog = ref.current
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousId = previous?.id || null
-    const previousAriaLabel = previous?.getAttribute('aria-label') || null
-    const previousTagName = previous?.tagName.toLowerCase() || null
     const focusables = () =>
       Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
         element => !element.hasAttribute('hidden') && element.getAttribute('aria-hidden') !== 'true',
@@ -60,27 +57,9 @@ export function useDialogFocus<T extends HTMLElement>(
     dialog.addEventListener('keydown', handleKeyDown)
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown)
-      requestAnimationFrame(() => {
-        if (previous && document.contains(previous)) {
-          previous.focus()
-          return
-        }
-
-        if (previousId) {
-          const replacement = document.getElementById(previousId)
-          if (replacement instanceof HTMLElement) {
-            replacement.focus()
-            return
-          }
-        }
-
-        if (previousAriaLabel && previousTagName) {
-          const replacement = Array.from(
-            document.querySelectorAll<HTMLElement>(previousTagName),
-          ).find(element => element.getAttribute('aria-label') === previousAriaLabel)
-          replacement?.focus()
-        }
-      })
+      if (previous && document.contains(previous)) {
+        requestAnimationFrame(() => previous.focus())
+      }
     }
   }, [open])
 
