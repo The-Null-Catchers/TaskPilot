@@ -17,7 +17,21 @@ class _MyTasksScreenState extends ConsumerState<MyTasksScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(myTasksProvider(scope));
     return Scaffold(
-      appBar: AppBar(title: const Text('My Tasks'), actions: [IconButton(onPressed: () => ref.read(myTasksProvider(scope).notifier).load(), icon: const Icon(Icons.refresh_rounded))]),
+      appBar: AppBar(
+        title: const Text('My Tasks'),
+        actions: [
+          IconButton(
+            onPressed: () => context.push('/my-tasks/archived'),
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Archived tasks',
+          ),
+          IconButton(
+            onPressed: () => ref.read(myTasksProvider(scope).notifier).load(),
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () => ref.read(myTasksProvider(scope).notifier).load(),
