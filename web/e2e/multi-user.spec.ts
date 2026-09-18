@@ -78,7 +78,7 @@ test.describe.serial('multi-user collaboration', () => {
       data: {
         workspace_id: workspace.id,
         name: 'Realtime E2E Project',
-        key: 'E2E',
+        key: `E${String(Date.now()).slice(-8)}`,
         description: 'Deterministic multi-user browser E2E project',
       },
     })
@@ -252,6 +252,7 @@ test.describe.serial('multi-user collaboration', () => {
       headers: authHeaders(b),
     })
     await expectStatus(restore, 200)
+    const restoredTask = await restore.json()
 
     const savedView = await request.post(`${API}/saved-views`, {
       headers: authHeaders(b),
