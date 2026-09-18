@@ -2,7 +2,7 @@ groups:
   - name: taskpilot-api
     rules:
       - alert: TaskPilotReadinessFailure
-        expr: probe_success{job="blackbox",instance="http://api:8000/health/ready"} == 0
+        expr: probe_success{job="blackbox",instance="http://backend:8000/health/ready"} == 0
         for: 2m
         labels:
           severity: critical
