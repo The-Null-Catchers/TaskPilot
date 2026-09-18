@@ -2,12 +2,12 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user, require_project, require_workspace
-from app.collaboration_models import Checklist, ChecklistItem, Subtask, TaskDependency, TaskWatcher
+from app.collaboration_models import Checklist, ChecklistItem, ProjectMember, Subtask, TaskDependency, TaskWatcher
 from app.db import get_db
 from app.models import (
     ActivityLog,
@@ -249,6 +249,33 @@ async def delete_comment_reaction(task_id: UUID, comment_id: UUID, reaction_id: 
 async def task_activity(task_id: UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     await _task_access(db, task_id, user.id, include_archived=True)
     query = select(ActivityLog).where(ActivityLog.task_id == task_id).order_by(ActivityLog.created_at.desc()).limit(200)
+    return list((await db.scalars(query)).all())
+
+
+@router.get("/workspaces/{workspace_id}/archived-tasks", response_model=list[TaskOut])
+async def list_archived_tasks(
+    workspace_id: UUID,
+    project_id: UUID | None = None,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    role = await require_workspace(db, workspace_id, user.id)
+    query = select(Task).where(
+        Task.workspace_id == workspace_id,
+        Task.deleted_at.is_not(None),
+    )
+    if project_id is not None:
+        project = await db.get(Project, project_id)
+        if not project or project.workspace_id != workspace_id:
+            raise HTTPException(status_code=404, detail="Project not found")
+        await require_project(db, project_id, user.id)
+        query = query.where(Task.project_id == project_id)
+    elif role == "guest":
+        allowed_projects = select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+        query = query.where(Task.project_id.in_(allowed_projects))
+    query = query.order_by(Task.deleted_at.desc()).limit(limit).offset(offset)
     return list((await db.scalars(query)).all())
 
 

@@ -241,3 +241,48 @@ async def test_advanced_task_collaboration_flows(api_client):
     assert final_state.status_code == 200, final_state.text
     assert final_state.json()["blocked"] is False
     assert final_state.json()["watching"] is False
+
+    archive_response = await api_client.post(
+        f"/api/v1/tasks/{blocked['id']}/archive",
+        headers=_headers(owner_token),
+    )
+    assert archive_response.status_code == 200, archive_response.text
+
+    hidden_task = await api_client.get(
+        f"/api/v1/tasks/{blocked['id']}",
+        headers=_headers(owner_token),
+    )
+    assert hidden_task.status_code == 404, hidden_task.text
+
+    archived_tasks = await api_client.get(
+        f"/api/v1/workspaces/{workspace['id']}/archived-tasks",
+        headers=_headers(owner_token),
+    )
+    assert archived_tasks.status_code == 200, archived_tasks.text
+    assert any(item["id"] == blocked["id"] for item in archived_tasks.json())
+
+    member_archived_tasks = await api_client.get(
+        f"/api/v1/workspaces/{workspace['id']}/archived-tasks?project_id={project['id']}",
+        headers=_headers(member_token),
+    )
+    assert member_archived_tasks.status_code == 200, member_archived_tasks.text
+    assert any(item["id"] == blocked["id"] for item in member_archived_tasks.json())
+
+    restore_response = await api_client.post(
+        f"/api/v1/tasks/{blocked['id']}/restore",
+        headers=_headers(owner_token),
+    )
+    assert restore_response.status_code == 200, restore_response.text
+
+    restored_task = await api_client.get(
+        f"/api/v1/tasks/{blocked['id']}",
+        headers=_headers(owner_token),
+    )
+    assert restored_task.status_code == 200, restored_task.text
+
+    archive_after_restore = await api_client.get(
+        f"/api/v1/workspaces/{workspace['id']}/archived-tasks",
+        headers=_headers(owner_token),
+    )
+    assert archive_after_restore.status_code == 200, archive_after_restore.text
+    assert all(item["id"] != blocked["id"] for item in archive_after_restore.json())
