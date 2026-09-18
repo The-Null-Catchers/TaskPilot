@@ -102,6 +102,7 @@ class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         UniqueConstraint("project_id", "number", name="uq_task_number"),
+        UniqueConstraint("workspace_id", "identifier", name="uq_task_identifier_workspace"),
         Index("ix_tasks_workspace_status_due", "workspace_id", "status", "due_date"),
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -110,7 +111,7 @@ class Task(Base):
     column_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("board_columns.id", ondelete="RESTRICT"), index=True)
     reporter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     number: Mapped[int] = mapped_column(Integer)
-    identifier: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    identifier: Mapped[str] = mapped_column(String(32), index=True)
     title: Mapped[str] = mapped_column(String(240))
     description: Mapped[str] = mapped_column(Text, default="")
     priority: Mapped[str] = mapped_column(String(16), default="none", index=True)
