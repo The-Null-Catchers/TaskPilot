@@ -32,7 +32,7 @@ groups:
     rules:
       - alert: TaskPilotStorageOperationFailure
         expr: |
-          sum(count_over_time({compose_service="api"} |~ "Object storage upload failed|Could not create attachment|Could not delete attachment objects" [5m])) > 2
+          sum(count_over_time({compose_service="backend"} |~ "Object storage upload failed|Could not create attachment|Could not delete attachment objects" [5m])) > 2
         for: 2m
         labels:
           severity: warning
@@ -41,7 +41,7 @@ groups:
 
       - alert: TaskPilotWebSocketFailure
         expr: |
-          sum(count_over_time({compose_service="api"} | json | event="websocket_realtime_failure" [5m])) > 0
+          sum(count_over_time({compose_service="backend"} | json | event="websocket_realtime_failure" [5m])) > 0
         for: 5m
         labels:
           severity: warning
