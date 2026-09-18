@@ -9,6 +9,7 @@ from app import (  # noqa: F401
     account_models,
     attachment_models,
     collaboration_models,
+    integration_models,
     models,
     notification_models,
     planning_models,

@@ -1,7 +1,8 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,12 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.collaboration_models import ProjectMember, WorkspaceArchive
 from app.core.security import decode_access_token
 from app.db import get_db
+from app.integration_models import PersonalApiToken
+from app.integration_security import personal_token_digest
 from app.models import Project, User, WorkspaceMember
 
 bearer = HTTPBearer(auto_error=False)
 
 
 async def current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -22,6 +26,64 @@ async def current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
+        )
+
+    raw = credentials.credentials
+    if raw.startswith("tp_pat_"):
+        token = await db.scalar(
+            select(PersonalApiToken).where(
+                PersonalApiToken.token_hash == personal_token_digest(raw),
+                PersonalApiToken.revoked_at.is_(None),
+            )
+        )
+        now = datetime.now(UTC)
+        if not token or (token.expires_at is not None and token.expires_at <= now):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired API token",
+            )
+        scopes = {item for item in token.scopes.split(",") if item}
+        if "read" not in scopes:
+            raise HTTPException(status_code=403, detail="API token lacks read scope")
+        if request.method.upper() not in {"GET", "HEAD", "OPTIONS"} and "write" not in scopes:
+            raise HTTPException(status_code=403, detail="API token lacks write scope")
+        should_touch = token.last_used_at is None or token.last_used_at <= now - timedelta(minutes=5)
+        if should_touch:
+            token.last_used_at = now
+        user = await db.get(User, token.user_id)
+        if not user or not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Account unavailable",
+            )
+        if should_touch:
+            await db.commit()
+        return user
+
+    try:
+        user_id = decode_access_token(raw)
+    except (jwt.InvalidTokenError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        ) from None
+    user = await db.get(User, user_id)
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account unavailable",
+        )
+    return user
+
+
+async def current_session_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    if not credentials or credentials.credentials.startswith("tp_pat_"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Interactive session authentication required",
         )
     try:
         user_id = decode_access_token(credentials.credentials)
