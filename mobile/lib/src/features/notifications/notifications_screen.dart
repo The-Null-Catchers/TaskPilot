@@ -15,6 +15,7 @@ class NotificationsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Notifications'),
         actions: [
+          IconButton(onPressed: () => context.push('/settings/notifications'), icon: const Icon(Icons.settings_outlined), tooltip: 'Notification settings'),
           if (unread > 0) TextButton.icon(onPressed: () => ref.read(notificationsProvider.notifier).markAllRead(), icon: const Icon(Icons.done_all_rounded), label: const Text('Read all')),
         ],
       ),
