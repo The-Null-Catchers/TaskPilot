@@ -74,7 +74,7 @@ class _AttachmentsSectionState extends ConsumerState<AttachmentsSection> {
 
   Future<void> _pickAndUpload() async {
     if (_uploading) return;
-    final result = await FilePicker.pickFiles(
+    final result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       withData: true,
     );
