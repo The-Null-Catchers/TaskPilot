@@ -6,6 +6,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     app_env: str = "development"
+    log_level: str = "INFO"
+    log_json: bool = False
+    metrics_enabled: bool = False
+    metrics_token: str | None = None
     app_url: str = "http://localhost:3000"
     api_url: str = "http://localhost:8000"
     database_url: str = "postgresql+asyncpg://taskpilot:taskpilot@localhost:5432/taskpilot"
