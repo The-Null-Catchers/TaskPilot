@@ -188,6 +188,17 @@ async def register_subscription(
         if not keys.get("p256dh") or not keys.get("auth"):
             raise HTTPException(status_code=422, detail="Web Push subscription keys are required")
     digest = target_digest(data.target)
+    now = datetime.now(UTC)
+    await db.execute(
+        update(PushSubscription)
+        .where(
+            PushSubscription.channel == data.channel,
+            PushSubscription.target_hash == digest,
+            PushSubscription.user_id != user.id,
+            PushSubscription.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
     subscription = await db.scalar(
         select(PushSubscription).where(
             PushSubscription.user_id == user.id,
@@ -195,7 +206,6 @@ async def register_subscription(
             PushSubscription.target_hash == digest,
         )
     )
-    now = datetime.now(UTC)
     if subscription is None:
         subscription = PushSubscription(
             user_id=user.id,
