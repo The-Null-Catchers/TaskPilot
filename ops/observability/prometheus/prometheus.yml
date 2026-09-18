@@ -17,7 +17,7 @@ scrape_configs:
       type: Bearer
       credentials_file: /run/secrets/taskpilot_metrics_token
     static_configs:
-      - targets: ["api:8000"]
+      - targets: ["backend:8000"]
 
   - job_name: postgres
     static_configs:
@@ -33,8 +33,8 @@ scrape_configs:
       module: [http_2xx]
     static_configs:
       - targets:
-          - http://api:8000/health/live
-          - http://api:8000/health/ready
+          - http://backend:8000/health/live
+          - http://backend:8000/health/ready
           - http://minio:9000/minio/health/ready
     relabel_configs:
       - source_labels: [__address__]
