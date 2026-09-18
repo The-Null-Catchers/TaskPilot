@@ -1,12 +1,14 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { CheckCircle2, Circle, Clock3, Eye, ListChecks, MessageSquare, Pencil, Plus, UserPlus, X } from 'lucide-react'
+import { CheckCircle2, Circle, Clock3, Eye, ListChecks, Pencil, Plus, UserPlus, X } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { Checklist, ChecklistItem, Comment, request, Subtask, Task, TimeSummary, UserSummary, WorkspaceMember } from '@/lib/api'
+import { CommentThread } from '@/components/comment-thread'
+import { TaskCollaborationPanel } from '@/components/task-collaboration-panel'
+import { Checklist, ChecklistItem, request, Subtask, Task, TimeSummary, UserSummary, WorkspaceMember } from '@/lib/api'
 
 function formatDuration(seconds:number) {
   const hours=Math.floor(seconds/3600)
@@ -53,7 +55,6 @@ export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:strin
   const [error,setError]=useState('')
   const [assigneeToAdd,setAssigneeToAdd]=useState('')
 
-  const comments=useQuery({queryKey:['comments',task.id],queryFn:()=>request<Comment[]>(`/api/v1/tasks/${task.id}/comments`,{},token)})
   const subtasks=useQuery({queryKey:['subtasks',task.id],queryFn:()=>request<Subtask[]>(`/api/v1/tasks/${task.id}/subtasks`,{},token)})
   const checklists=useQuery({queryKey:['checklists',task.id],queryFn:()=>request<Checklist[]>(`/api/v1/tasks/${task.id}/checklists`,{},token)})
   const assignees=useQuery({queryKey:['assignees',task.id],queryFn:()=>request<UserSummary[]>(`/api/v1/tasks/${task.id}/assignees`,{},token)})
@@ -92,7 +93,6 @@ export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:strin
   async function addSubtask(e:FormEvent<HTMLFormElement>) {e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const subtaskTitle=String(data.get('title')??'').trim();if(!subtaskTitle)return;await request<Subtask>(`/api/v1/tasks/${task.id}/subtasks`,{method:'POST',body:JSON.stringify({title:subtaskTitle})},token);form.reset();await subtasks.refetch()}
   async function toggleSubtask(subtask:Subtask) {await request<Subtask>(`/api/v1/tasks/${task.id}/subtasks/${subtask.id}`,{method:'PATCH',body:JSON.stringify({version:subtask.version,status:subtask.status==='done'?'open':'done'})},token);await subtasks.refetch()}
   async function addChecklist(e:FormEvent<HTMLFormElement>) {e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const checklistTitle=String(data.get('title')??'').trim();if(!checklistTitle)return;await request<Checklist>(`/api/v1/tasks/${task.id}/checklists`,{method:'POST',body:JSON.stringify({title:checklistTitle})},token);form.reset();await checklists.refetch()}
-  async function addComment(e:FormEvent<HTMLFormElement>) {e.preventDefault();const form=e.currentTarget;const data=new FormData(form);const body=String(data.get('body')??'').trim();if(!body)return;await request<Comment>(`/api/v1/tasks/${task.id}/comments`,{method:'POST',body:JSON.stringify({body})},token);form.reset();await comments.refetch()}
 
   return <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onMouseDown={onClose}><aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--line)] bg-[var(--panel)] p-5 sm:p-7" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between gap-4"><div className="min-w-0 flex-1"><p className="text-sm font-medium muted">{task.identifier}</p><input value={title} onChange={e=>setTitle(e.target.value)} className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-tight outline-none" aria-label="Task title"/></div><button onClick={onClose} className="rounded-xl border border-[var(--line)] p-2" aria-label="Close task"><X size={18}/></button></div>
 
@@ -108,6 +108,8 @@ export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:strin
 
     <section className="mt-10 border-t border-[var(--line)] pt-6"><h2 className="flex items-center gap-2 font-semibold"><ListChecks size={18}/>Checklists</h2><div className="mt-4 space-y-4">{checklists.data?.map(checklist=><ChecklistSection key={checklist.id} taskId={task.id} checklist={checklist} token={token}/>)}</div>{checklists.data?.length===0&&<p className="mt-3 text-sm muted">Add a checklist for repeatable completion criteria.</p>}<form onSubmit={addChecklist} className="mt-4 flex gap-2"><input name="title" required maxLength={160} placeholder="Checklist title" className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm outline-none focus:border-indigo-500"/><button className="rounded-xl border border-[var(--line)] px-3 text-sm font-medium">Add</button></form></section>
 
-    <section className="mt-10 border-t border-[var(--line)] pt-6"><h2 className="flex items-center gap-2 font-semibold"><MessageSquare size={18}/>Discussion</h2><form onSubmit={addComment} className="mt-4"><textarea name="body" required rows={3} placeholder="Write a comment…" className="w-full rounded-2xl border border-[var(--line)] bg-transparent p-3 outline-none"/><div className="mt-2 flex justify-end"><button className="rounded-xl border border-[var(--line)] px-4 py-2 text-sm font-semibold">Comment</button></div></form><div className="mt-5 space-y-3">{comments.data?.map(comment=><article key={comment.id} className="rounded-2xl bg-black/[.035] p-4 dark:bg-white/[.035]"><div className="mb-2 flex items-center justify-between gap-3"><span className="text-xs font-medium muted">{comment.author_id.slice(0,8)}</span><time className="text-xs muted">{new Date(comment.created_at).toLocaleString()}</time></div><p className="whitespace-pre-wrap text-sm leading-6">{comment.body}</p></article>)}{comments.isLoading&&<p className="text-sm muted">Loading comments…</p>}{comments.data?.length===0&&<p className="text-sm muted">No comments yet.</p>}</div></section>
+    <TaskCollaborationPanel task={task} token={token}/>
+
+    <CommentThread task={task} token={token}/>
   </aside></div>
 }
