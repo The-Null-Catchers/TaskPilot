@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/offline_queue.dart';
 import 'task_detail_controller.dart';
+import 'task_models.dart';
 
 class TaskDetailScreen extends ConsumerWidget {
   const TaskDetailScreen({super.key, required this.taskId});
@@ -82,6 +83,71 @@ class TaskDetailScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _addLabel(BuildContext context, WidgetRef ref, TaskDetailState state) async {
+    final selectedIds = state.taskLabels.map((item) => item.id).toSet();
+    final available = state.workspaceLabels.where((item) => !selectedIds.contains(item.id)).toList();
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No additional workspace labels are available.')));
+      return;
+    }
+    final selected = await showModalBottomSheet<LabelItem>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(padding: EdgeInsets.fromLTRB(20, 4, 20, 10), child: Text('Add label', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+            ...available.map((label) => ListTile(leading: const Icon(Icons.label_outline_rounded), title: Text(label.name), onTap: () => Navigator.pop(context, label))),
+          ],
+        ),
+      ),
+    );
+    if (selected == null) return;
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).addLabel(selected.id);
+    } catch (_) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not add label.')));
+    }
+  }
+
+  Future<void> _addDependency(BuildContext context, WidgetRef ref, TaskDetailState state) async {
+    final task = state.task;
+    if (task == null) return;
+    final existing = state.blockedBy.map((item) => item.blockerTaskId).toSet();
+    final available = state.projectTasks.where((item) => item.id != task.id && item.status != 'done' && !existing.contains(item.id)).toList();
+    if (available.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No eligible blocker tasks are available.')));
+      return;
+    }
+    final selected = await showModalBottomSheet<TaskItem>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(padding: EdgeInsets.fromLTRB(20, 4, 20, 10), child: Text('Add blocking task', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700))),
+            ...available.map((item) => ListTile(title: Text(item.title), subtitle: Text(item.identifier), onTap: () => Navigator.pop(context, item))),
+          ],
+        ),
+      ),
+    );
+    if (selected == null) return;
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).addDependency(selected.id);
+    } catch (_) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not add dependency. It may create a circular relationship.')));
+    }
+  }
+
+  TaskItem? _projectTask(TaskDetailState state, String id) {
+    for (final item in state.projectTasks) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(taskDetailProvider(taskId));
@@ -89,7 +155,22 @@ class TaskDetailScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(task?.identifier ?? 'Task'),
-        actions: [if (task != null) IconButton(onPressed: () => _editTask(context, ref, state), icon: const Icon(Icons.edit_rounded), tooltip: 'Edit task'), IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(taskDetailProvider(taskId).notifier).load(); }, icon: const Icon(Icons.refresh_rounded))],
+        actions: [
+          if (task != null)
+            IconButton(
+              onPressed: state.offline ? null : () async {
+                try {
+                  await ref.read(taskDetailProvider(taskId).notifier).toggleWatch();
+                } catch (_) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not update watcher state.')));
+                }
+              },
+              icon: Icon(state.watching ? Icons.notifications_active_rounded : Icons.notifications_none_rounded),
+              tooltip: state.watching ? 'Unwatch task' : 'Watch task',
+            ),
+          if (task != null) IconButton(onPressed: () => _editTask(context, ref, state), icon: const Icon(Icons.edit_rounded), tooltip: 'Edit task'),
+          IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(taskDetailProvider(taskId).notifier).load(); }, icon: const Icon(Icons.refresh_rounded)),
+        ],
       ),
       body: SafeArea(
         child: state.loading && task == null
@@ -110,6 +191,13 @@ class TaskDetailScreen extends ConsumerWidget {
                             child: Row(children: [Icon(state.conflict ? Icons.sync_problem_rounded : state.pendingSync ? Icons.cloud_upload_outlined : Icons.cloud_off_rounded, size: 18), const SizedBox(width: 8), Expanded(child: Text(state.conflict ? 'A local edit conflicts with a newer server version. Tap to review.' : state.pendingSync ? 'Local changes are waiting to sync.' : 'Offline — edits to this existing task will be queued locally.')), const Icon(Icons.chevron_right_rounded)]),
                           ),
                         ),
+                      if (state.blocked)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(color: Theme.of(context).colorScheme.errorContainer, borderRadius: BorderRadius.circular(14)),
+                          child: const Row(children: [Icon(Icons.block_rounded, size: 18), SizedBox(width: 8), Expanded(child: Text('Blocked by another task. Resolve the dependency before completing this work.'))]),
+                        ),
                       Text(task.title, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
                       Wrap(spacing: 8, runSpacing: 8, children: [_Chip(label: task.priority, icon: Icons.flag_outlined), _Chip(label: task.status.replaceAll('_', ' '), icon: Icons.track_changes_rounded), if (task.dueDate != null) _Chip(label: 'Due ${task.dueDate!.split('T').first}', icon: Icons.calendar_today_rounded)]),
@@ -118,6 +206,60 @@ class TaskDetailScreen extends ConsumerWidget {
                       _SectionHeader(title: 'Assignees', icon: Icons.group_outlined, action: state.members.isEmpty ? null : IconButton(onPressed: () => _assignMember(context, ref, state), icon: const Icon(Icons.person_add_alt_1_rounded))),
                       const SizedBox(height: 8),
                       if (state.assignees.isEmpty) const Text('No cached assignees.') else Wrap(spacing: 8, runSpacing: 8, children: state.assignees.map((person) => InputChip(avatar: CircleAvatar(child: Text(person.name.substring(0, 1).toUpperCase())), label: Text(person.name), onDeleted: () async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).unassign(person.id); if (context.mounted) _showOutcome(context, outcome); })).toList()),
+                      const SizedBox(height: 28),
+                      _SectionHeader(title: 'Labels', icon: Icons.label_outline_rounded, action: state.offline ? null : IconButton(onPressed: () => _addLabel(context, ref, state), icon: const Icon(Icons.add_rounded), tooltip: 'Add label')),
+                      const SizedBox(height: 8),
+                      if (state.taskLabels.isEmpty)
+                        const Text('No labels.')
+                      else
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: state.taskLabels.map((label) => InputChip(
+                            label: Text(label.name),
+                            onDeleted: state.offline ? null : () async {
+                              try {
+                                await ref.read(taskDetailProvider(taskId).notifier).removeLabel(label.id);
+                              } catch (_) {
+                                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not remove label.')));
+                              }
+                            },
+                          )).toList(),
+                        ),
+                      const SizedBox(height: 28),
+                      _SectionHeader(title: 'Dependencies', icon: Icons.link_rounded, action: state.offline ? null : IconButton(onPressed: () => _addDependency(context, ref, state), icon: const Icon(Icons.add_link_rounded), tooltip: 'Add blocker')),
+                      const SizedBox(height: 8),
+                      Row(children: [
+                        Icon(state.watching ? Icons.notifications_active_outlined : Icons.notifications_none_rounded, size: 18),
+                        const SizedBox(width: 8),
+                        Text(state.watching
+                            ? 'Following · ${state.watcherCount} watcher${state.watcherCount == 1 ? '' : 's'}'
+                            : 'Not following · ${state.watcherCount} watcher${state.watcherCount == 1 ? '' : 's'}'),
+                      ]),
+                      const SizedBox(height: 8),
+                      if (state.blockedBy.isEmpty)
+                        const Text('No blocking dependencies.')
+                      else
+                        ...state.blockedBy.map((dependency) {
+                          final blocker = _projectTask(state, dependency.blockerTaskId);
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.link_rounded),
+                            title: Text(blocker?.title ?? 'Blocking task'),
+                            subtitle: Text(blocker?.identifier ?? dependency.blockerTaskId),
+                            trailing: state.offline ? null : IconButton(
+                              onPressed: () async {
+                                try {
+                                  await ref.read(taskDetailProvider(taskId).notifier).removeDependency(dependency.id);
+                                } catch (_) {
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not remove dependency.')));
+                                }
+                              },
+                              icon: const Icon(Icons.link_off_rounded),
+                              tooltip: 'Remove dependency',
+                            ),
+                          );
+                        }),
                       const SizedBox(height: 28),
                       _SectionHeader(title: 'Subtasks', icon: Icons.account_tree_outlined, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'Add subtask', label: 'Title'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addSubtask(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
                       const SizedBox(height: 6),
