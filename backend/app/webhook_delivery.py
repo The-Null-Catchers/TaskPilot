@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -10,6 +11,8 @@ from app.integration_models import WebhookDelivery, WorkspaceWebhook
 from app.integration_security import decrypt_secret, sign_webhook
 from app.models import ActivityLog
 from app.webhook_security import validate_webhook_url
+
+logger = logging.getLogger("taskpilot.webhooks")
 
 
 def event_matches(configured: str, event: str) -> bool:
@@ -81,6 +84,13 @@ def _mark_failed_delivery(
     else:
         delivery.status = "exhausted"
         delivery.next_attempt_at = None
+        logger.error(
+            "webhook_delivery_exhausted",
+            extra={
+                "event": "webhook_delivery_exhausted",
+                "attempts": delivery.attempts,
+            },
+        )
 
 
 def _payload(activity: ActivityLog) -> dict:
