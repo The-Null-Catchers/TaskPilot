@@ -15,7 +15,7 @@ Workspace managers create invitations for a specific email address and role. The
 
 Invitations expire after seven days, can be cancelled by an authorized manager, and may only be previewed, accepted, or rejected by an authenticated user whose account email matches the invitation email. Expired invitations are excluded from the active invitation list.
 
-Email delivery is not implemented in this phase; the web settings UI provides a copyable invitation link. A production email provider can later deliver the same link without changing invitation authorization semantics.
+Invitation email delivery is implemented through Celery when SMTP is configured. The validation token is stored only as a SHA-256 digest; an encrypted one-time delivery copy is retained for the worker and cleared after successful delivery. The web settings UI exposes delivery state and still provides the one-time secure link as a fallback when SMTP is unavailable.
 
 ## Workspace lifecycle
 

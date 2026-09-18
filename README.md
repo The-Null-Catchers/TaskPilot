@@ -1,188 +1,215 @@
 # TaskPilot
 
-TaskPilot is a collaborative project and task management platform for individuals and teams. It combines structured projects, Kanban workflows, task discussion, realtime activity, notifications, analytics, and a native mobile client in one portfolio-grade SaaS codebase.
+TaskPilot is a production-oriented collaborative project and task management platform for teams and individuals. It combines Trello-style boards, Linear-style task workflows, Asana-style planning, and Notion-style collaborative context in a single web + native mobile SaaS codebase.
 
-## What is implemented now
+The repository is intentionally built as a portfolio-grade system rather than a CRUD demo: multi-tenant authorization, realtime collaboration, optimistic concurrency, offline mobile mutations, object storage, background delivery, notifications, analytics, admin tooling, integrations, CI/CD, and production deployment are all implemented as working product paths.
 
-This repository contains a working first production slice rather than a mockup:
+## Product surface
 
-- Next.js web application with registration/login, persistent web sessions, workspace/project navigation, dark mode, project creation, responsive Kanban board, task creation, and optimistic drag-to-column moves.
-- Flutter mobile application with native Material 3 UI, login/registration, secure token storage, refresh-token rotation, workspace loading, offline workspace cache, system dark mode, and Android CI builds.
-- FastAPI backend with versioned REST API, OpenAPI docs, PostgreSQL, Redis, Alembic, Argon2 password hashing, short-lived JWT access tokens, opaque hashed refresh sessions, session rotation/revocation, and workspace authorization enforced server-side.
-- Core collaboration model: workspaces, members, invitation schema, projects, five-column boards, readable task identifiers, task optimistic locking/versioning, comments, labels/assignee schemas, activity logs, notifications, project analytics, permission-aware global search, and admin metrics.
-- Realtime workspace channel over authenticated WebSockets backed by Redis pub/sub. Task create/update/move and comment creation publish realtime events.
-- Celery worker + Celery Beat. The first scheduled job creates idempotency-windowed deadline notifications for assigned tasks due within 24 hours.
-- Docker Compose for PostgreSQL, Redis, MinIO, API, worker, beat scheduler, and web.
-- GitHub Actions for backend lint/tests, Next.js typecheck/build, Flutter analyze/tests, release APK, release AAB, and downloadable Android artifacts.
+### Web
 
-Advanced product areas that are not complete yet are explicitly tracked in **Roadmap** below; they are not represented as finished features.
+The Next.js application includes:
+
+- registration, login, refresh sessions, email verification, password reset, account deletion, and session/device management
+- workspace onboarding, role management, invitations, ownership transfer, archive/restore, member removal, and guest isolation
+- projects, Kanban boards, project overview, timeline, analytics, and templates
+- task detail with Markdown descriptions, multiple assignees, labels, watchers, subtasks, dependencies, checklists, comments, mentions, reactions, attachments, custom fields, time tracking, and archive/restore
+- My Tasks with assigned/created/watching/all scopes, saved views, filters, board/list modes, and archived task recovery
+- calendar, search, command palette, recent items, and favorites
+- notification inbox and notification preferences
+- workspace settings, API tokens, outbound webhooks, account settings, and admin tooling
+- responsive layouts, dark mode, empty/loading/error states, and accessible keyboard-oriented controls
+
+### Flutter
+
+The native Flutter client includes:
+
+- authentication with secure token storage and refresh rotation
+- workspace/project navigation and native Kanban boards
+- task detail with editing, assignees, labels, watchers, dependencies, subtasks, checklists, comments, mentions, reactions, and task/comment attachments
+- checklist assignment and ordering plus subtask-to-task conversion
+- My Tasks, calendar, global search, notifications, project insights, account settings, and notification preferences
+- offline mutation queue with retry/conflict handling and a Sync Center
+- cached workspace/board/task data for useful offline reads
+- realtime workspace updates over WebSockets
+- archived-task browsing and restore
+- optional FCM device registration and notification deep-link handling
+- Android APK/AAB release builds in CI
+
+The mobile app is native Flutter, not a WebView.
+
+## Backend and collaboration
+
+The FastAPI backend uses PostgreSQL, Redis, Celery, Alembic, and S3-compatible object storage.
+
+Implemented backend domains include:
+
+- users, sessions, account security, workspaces, invitations, members, and project-level guest access
+- projects, columns, tasks, assignees, labels, watchers, comments, mentions, reactions, subtasks, dependencies, and checklists
+- task optimistic concurrency through monotonic version numbers and HTTP 409 conflicts
+- task archive/restore lifecycle with archived records excluded from normal task reads
+- custom fields, saved views, favorites, recent items, templates, and time tracking
+- S3/MinIO attachments with MIME validation, signed download URLs, quotas, and authorization
+- permission-aware global search
+- project planning, timeline data, workload/velocity/status analytics, activity feeds, and audit logs
+- notification preferences, email delivery, Web Push, FCM/APNs provider support, digest scheduling, and delivery retries
+- secure workspace invitation email delivery with encrypted one-time delivery tokens and background retries
+- API tokens and signed outbound webhooks with retries
+- platform admin metrics and management APIs
+
+## Realtime design
+
+Workspace realtime is Redis pub/sub backed and authorization is enforced before a socket subscribes to workspace events.
+
+Access tokens are **not placed in WebSocket URLs**. Web and Flutter clients connect to:
+
+```text
+/api/v1/ws/workspaces/{workspace_id}
+```
+
+and immediately send an authentication frame:
+
+```json
+{"type":"auth","token":"<short-lived access token>"}
+```
+
+The server enforces a short authentication timeout, validates browser origins against configured CORS origins, verifies the user and workspace membership, and only then subscribes the socket to Redis.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  Web[Next.js Web] --> API[FastAPI /api/v1]
-  Mobile[Flutter] --> API
-  Web --> WS[Authenticated WebSocket]
-  Mobile --> WS
+  Web[Next.js Web] -->|REST| API[FastAPI /api/v1]
+  Mobile[Flutter] -->|REST| API
+  Web -->|authenticated WS handshake| Realtime[Workspace WebSocket]
+  Mobile -->|authenticated WS handshake| Realtime
+
   API --> DB[(PostgreSQL)]
   API --> Redis[(Redis)]
-  WS --> Redis
+  API --> Storage[(S3 / MinIO)]
+  Realtime --> Redis
+
   Worker[Celery Worker] --> DB
   Worker --> Redis
+  Worker --> SMTP[SMTP]
+  Worker --> Push[Web Push / FCM / APNs]
+  Worker --> Webhooks[Outbound Webhooks]
   Beat[Celery Beat] --> Redis
-  API -. attachment phase .-> Storage[(MinIO / S3)]
 ```
 
-More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for more detail.
 
 ## Repository layout
 
 ```text
 TaskPilot/
-├── backend/              FastAPI API, SQLAlchemy models, Alembic, Celery, tests
-├── web/                  Next.js + TypeScript + Tailwind + TanStack Query + dnd-kit
-├── mobile/               Flutter + Riverpod + Dio + GoRouter + secure/offline storage
-├── docs/                 Architecture and engineering notes
-├── .github/workflows/    CI and Android build pipeline
-├── docker-compose.yml    Local multi-service environment
-├── .env.example          Safe configuration template
-└── Makefile              Common local commands
+├── backend/                 FastAPI, SQLAlchemy, Alembic, Celery, tests
+├── web/                     Next.js, TypeScript, Tailwind, TanStack Query, dnd-kit
+├── mobile/                  Flutter, Riverpod, Dio, GoRouter, secure/offline storage
+├── docs/                    Architecture, deployment, workspace management
+├── .github/workflows/       CI and Android release builds
+├── docker-compose.yml       Local development stack
+├── docker-compose.prod.yml  Production-oriented Compose stack
+├── .env.example
+├── .env.production.example
+└── Makefile
 ```
 
-## Core backend behavior
+## Authentication and authorization
 
-### Authentication
-
-- Passwords are hashed with Argon2.
+- Passwords use Argon2 hashing.
 - Access tokens are short-lived JWTs.
-- Refresh tokens are random opaque values and only their SHA-256 digests are stored.
-- Refresh tokens rotate on every refresh.
+- Refresh tokens are opaque random values stored only as SHA-256 digests server-side.
+- Refresh sessions rotate on refresh and can be revoked individually.
 - Web refresh tokens use HttpOnly cookies.
-- Mobile refresh/access tokens use platform secure storage.
-- Revoked/expired sessions cannot mint new access tokens.
+- Mobile credentials use platform secure storage.
+- Workspace, project, task, attachment, search, realtime, and integration APIs resolve authorization server-side.
+- Guest users only see projects with explicit project membership.
+- Admin endpoints require the independent platform `is_admin` flag.
 
-### Authorization and isolation
+A resource UUID is never treated as authorization proof.
 
-Workspace membership is resolved on the server for workspace-scoped operations. Project/task IDs do not grant access by themselves. Admin endpoints separately require the platform `is_admin` flag.
+## Files and object storage
 
-### Collaborative task updates
+TaskPilot uses S3-compatible object storage. Local development uses MinIO.
 
-Tasks have an integer `version`. Update/move endpoints compare the supplied version and return HTTP 409 if another collaborator changed the task first. This keeps optimistic UI fast without silently overwriting concurrent edits.
+Attachments support:
 
-### Realtime
+- task and comment entities
+- MIME and size validation
+- workspace storage quotas
+- signed download URLs
+- protected metadata access
+- delete authorization
+- optional server-side encryption configuration
 
-Workspace WebSocket connections authenticate with an access token and verify membership before subscribing to the Redis workspace channel. API mutations publish task/comment events to that channel.
+## Notifications
+
+Notifications support:
+
+- in-app inbox and read state
+- per-kind preference matrix
+- instant/hourly/daily email behavior
+- browser Web Push
+- FCM and APNs backend providers
+- Flutter FCM token registration/refresh/revocation
+- retryable delivery records
+- deadline reminders through Celery Beat
+
+Push credentials and Firebase client configuration remain deployment secrets and are not committed.
+
+## Invitation delivery
+
+Workspace invitations:
+
+- are restricted by actor role
+- expire after seven days
+- only work for the matching account email
+- store a SHA-256 validation digest
+- keep the raw token out of audit logs and invitation listings
+- use an encrypted one-time delivery copy for background SMTP delivery
+- clear that encrypted copy after successful delivery
+- retain a secure one-time creation link as a fallback when SMTP is unavailable
+
+## Offline mobile behavior
+
+Flutter supports queued offline mutations for conflict-safe operations. Queued changes are persisted per authenticated user and replayed when connectivity returns.
+
+HTTP 409 conflicts are retained for explicit user resolution in the Sync Center rather than silently overwriting newer server state. Destructive or lifecycle-sensitive operations such as archive/restore and some advanced collaboration mutations remain online-only.
 
 ## Local setup
 
 Requirements:
 
 - Docker + Docker Compose
-- Optional for running services outside Docker: Python 3.12+, Node.js 22+, Flutter stable
+- optionally Python 3.12+, Node.js 22+, and Flutter stable for running services directly
 
-Start the complete local stack:
+Start the local stack:
 
 ```bash
 cp .env.example .env
-# Replace JWT_SECRET before using this environment outside local development.
 docker compose up --build
 ```
 
-Or:
+or:
 
 ```bash
 make dev
 ```
 
-Local endpoints:
+Default local services:
 
 - Web: `http://localhost:3000`
 - API: `http://localhost:8000`
-- Swagger: `http://localhost:8000/api/v1/docs`
+- OpenAPI: `http://localhost:8000/api/v1/docs`
 - Health: `http://localhost:8000/health`
 - MinIO console: `http://localhost:9001`
 
-Database migrations run automatically when the backend container starts.
+## Flutter development
 
-## Environment variables
+The repository intentionally keeps generated Android host files out of source control. CI creates the Android host before building.
 
-Copy `.env.example` to `.env`. Important variables include:
-
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | SQLAlchemy PostgreSQL connection string |
-| `REDIS_URL` | Redis, realtime pub/sub, Celery broker/backend |
-| `JWT_SECRET` | Access-token signing secret; must be replaced in production |
-| `ACCESS_TOKEN_MINUTES` | Access-token lifetime |
-| `REFRESH_TOKEN_DAYS` | Refresh-session lifetime |
-| `CORS_ORIGINS` | Comma-separated allowed web origins |
-| `NEXT_PUBLIC_API_URL` | Browser-visible API URL |
-| `STORAGE_ENDPOINT` | S3-compatible endpoint for attachment phase |
-| `STORAGE_BUCKET` | Object-storage bucket |
-| `STORAGE_KEY` / `STORAGE_SECRET` | Object-storage credentials |
-
-Never commit real credentials or Android signing secrets.
-
-## API overview
-
-Implemented versioned routes include:
-
-```text
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-POST /api/v1/auth/refresh
-POST /api/v1/auth/logout
-GET  /api/v1/auth/me
-
-GET/POST /api/v1/workspaces
-GET/POST /api/v1/projects
-GET      /api/v1/projects/{project_id}/board
-POST     /api/v1/tasks
-PATCH    /api/v1/tasks/{task_id}
-POST     /api/v1/tasks/{task_id}/move
-GET/POST /api/v1/tasks/{task_id}/comments
-GET      /api/v1/notifications
-POST     /api/v1/notifications/{id}/read
-POST     /api/v1/notifications/read-all
-GET      /api/v1/search?q=...
-GET      /api/v1/activity/workspaces/{workspace_id}
-GET      /api/v1/analytics/projects/{project_id}
-GET      /api/v1/admin/metrics
-WS       /api/v1/ws/workspaces/{workspace_id}?token=...
-```
-
-HTTP exceptions and validation failures are returned through a consistent error envelope.
-
-## Web app
-
-The web client uses:
-
-- Next.js App Router
-- TypeScript strict mode
-- Tailwind CSS
-- TanStack Query
-- dnd-kit
-- responsive CSS variables/design tokens
-- dark/light theme support
-
-The first-run flow automatically creates a personal workspace during registration. The dashboard then lets a user create a project, receives the default Backlog / To Do / In Progress / Review / Done board, creates tasks, and moves tasks optimistically.
-
-## Mobile app
-
-The Flutter client is native, not a WebView. Current implemented slice:
-
-- Material 3 UI
-- Riverpod state management
-- Dio API client
-- GoRouter navigation
-- secure token storage
-- automatic token refresh
-- workspace cache through SharedPreferences
-- offline status when cached data is used
-- light/dark system theme
-
-For Android emulator local development:
+For local Android development:
 
 ```bash
 cd mobile
@@ -191,7 +218,9 @@ flutter pub get
 flutter run --dart-define=API_URL=http://10.0.2.2:8000
 ```
 
-For a physical device, set `API_URL` to an address reachable by that device.
+Use an API address reachable by the device when testing on physical hardware.
+
+FCM is runtime-optional. A deployment that wants native push must provide its Firebase platform configuration separately from source control and configure `FCM_SERVICE_ACCOUNT_JSON` on the backend.
 
 ## Testing
 
@@ -204,11 +233,15 @@ ruff check app tests
 pytest -q
 ```
 
+CI also verifies the complete Alembic chain by upgrading from an empty database, downgrading to base, and upgrading again.
+
 Web:
 
 ```bash
 cd web
 npm install
+npm run lint
+npm test
 npm run typecheck
 npm run build
 ```
@@ -222,72 +255,81 @@ flutter analyze
 flutter test
 ```
 
-## GitHub Actions
+Backend tests cover account lifecycle, authorization/isolation, collaboration, attachments, planning/analytics, productivity, notifications, integrations, templates, rate limiting, admin security, and multi-user API flows.
 
-`.github/workflows/ci.yml` runs three independent jobs:
+## CI/CD
 
-1. Backend lint + tests.
-2. Web typecheck + production build.
-3. Flutter analyze + tests + Android APK/AAB release builds.
+`.github/workflows/ci.yml` gates pull requests and `main` with four jobs:
 
-The Flutter job uploads `app-release.apk` and `app-release.aab` as the `taskpilot-android` workflow artifact.
+1. backend Ruff, Alembic upgrade/downgrade verification, and pytest
+2. web lint, Vitest, TypeScript typecheck, and production Next.js build
+3. Flutter analyze, tests, release APK, release AAB, and artifact upload
+4. production Compose validation plus backend/web Docker image builds
 
-Before production Play Store publishing, replace the generated/default signing setup with a keystore provided through GitHub Secrets. Do not commit a keystore or passwords.
+Android artifacts are uploaded as `taskpilot-android`.
+
+Store signing credentials must be supplied through CI secrets before Play Store publication; no keystore or signing password belongs in the repository.
+
+## Production deployment
+
+TaskPilot includes `docker-compose.prod.yml` and a production environment template.
+
+The production stack provides:
+
+- one-shot database migrations before service startup
+- non-root application containers
+- health-gated dependencies
+- persistent PostgreSQL/Redis/object-storage volumes
+- loopback-only public service bindings by default
+- Celery worker and Beat processes
+- configurable concurrency
+- startup rejection for unsafe default production secrets
+
+Use a TLS-terminating reverse proxy or managed load balancer in front of web/API/object storage. PostgreSQL and Redis should not be internet-accessible.
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Security posture
 
 Implemented safeguards include:
 
 - Argon2 password hashing
-- refresh token hashing and rotation
 - short-lived access tokens
-- secure web refresh cookie configuration
-- server-side authorization checks
-- workspace data isolation
-- optimistic conflict detection
-- validation with Pydantic
-- ORM parameter binding against SQL injection
+- refresh-token hashing, rotation, expiry, and revocation
+- HttpOnly web refresh cookies
+- secure headers including HSTS in production, CSP frame restrictions, MIME sniffing protection, and restrictive referrer policy
+- Redis-backed rate limits on sensitive authentication/account/upload operations
 - strict CORS configuration
-- production guard against the development JWT secret
-- permission-aware search
-- structured activity history
-- secret-free repository defaults
+- browser WebSocket Origin validation
+- token-free WebSocket URLs
+- server-side authorization and guest isolation
+- optimistic conflict detection
+- Pydantic validation and ORM parameter binding
+- signed object-storage URLs and attachment validation
+- encrypted push subscription targets/configuration
+- signed outbound webhooks
+- hashed invitation/API tokens
+- audit logs that intentionally exclude credentials/tokens
+- production startup guards against unsafe default secrets
 
-Production deployment should terminate TLS at the edge, set `APP_ENV=production`, use a strong random `JWT_SECRET`, use managed PostgreSQL/Redis or durable volumes, restrict CORS to real origins, and add centralized logging/error monitoring.
+## Remaining work
 
-## Roadmap
+The core product is implemented. Remaining work is mostly release/operations depth rather than missing CRUD features:
 
-The following requested product areas are intentionally **not marked complete yet** and are the next implementation phases:
-
-- workspace invitations acceptance/rejection UI and role management
-- project member overrides and ownership transfer
-- assignee/watcher mutation endpoints and mention parser
-- subtasks, dependencies, multiple checklists, reactions
-- attachment upload/download flow with MIME validation, signed MinIO/S3 URLs, thumbnails, and quotas
-- custom fields and saved views
-- My Tasks list/board/calendar
-- full calendar and timeline/Gantt views
-- richer project analytics charts and workload reporting
-- notification preference matrix, email templates, browser notifications, FCM/APNs push
-- mobile project/board/task detail flows and queued offline mutations
-- search command palette UI and recent searches
-- favorites and recently viewed items
-- task/project templates
-- time tracking
-- API tokens and webhooks
-- admin user/workspace/audit-log management screens
-- OAuth providers
-- account deletion/password-reset/email-verification workflows
-- production object-storage attachment service
-- E2E tests for the complete multi-user collaboration scenario
-- integrations and optional AI task assistant after the core product is stable
-
-These will be added in cohesive migrations/features rather than as non-functional placeholders.
+- full browser E2E coverage with Playwright or equivalent across login → workspace → project → collaboration flows
+- broader Flutter widget/integration tests and device-level offline/reconnect scenarios
+- iOS signing, archive, and App Store CI/release workflow
+- production Firebase/APNs platform configuration and real-device push validation
+- centralized error monitoring, log aggregation, uptime alerting, and SLO dashboards
+- OAuth providers if required by the target deployment
+- polished portfolio screenshots/demo dataset and public hosted demo
+- final licensing decision before external distribution
+- optional AI assistance only after the core platform remains stable under production use
 
 ## Portfolio intent
 
-The codebase is structured to demonstrate a realistic SaaS foundation: multi-client architecture, mobile development, PostgreSQL modeling, secure authentication/session rotation, server authorization, realtime collaboration, background jobs, optimistic concurrency, responsive product UI, offline cache, CI/CD, Docker, and explicit production hardening boundaries.
+TaskPilot demonstrates a realistic SaaS architecture across backend, responsive web, and native mobile clients: multi-tenant authorization, realtime events, background workers, secure authentication, object storage, notifications, integrations, optimistic concurrency, offline sync/conflict handling, analytics, admin operations, Docker, migrations, and CI/CD.
 
 ## License
 
-No license has been selected yet. Add one before distributing the project outside its intended portfolio/team context.
+No license has been selected yet.
