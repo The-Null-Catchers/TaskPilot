@@ -37,9 +37,11 @@ The directory is gitignored. Never commit this file.
 
 The PostgreSQL exporter reuses `POSTGRES_USER` and `POSTGRES_PASSWORD` from the deployment environment. For a hardened deployment, create a dedicated read-only monitoring database role and supply that credential instead.
 
+The Python Prometheus client metrics are process-local in the current API implementation. The reference request-rate/latency alerts are authoritative only with a single Uvicorn API worker (`WEB_CONCURRENCY=1`) or after your deployment adds Prometheus multiprocess aggregation/per-worker scraping. Dependency probes and exporter metrics are unaffected. Do not silently treat one randomly scraped worker as whole-service traffic.
+
 ## Start
 
-Run the application and monitoring extension as one Compose project so internal DNS names such as `api`, `postgres`, `redis`, and `minio` resolve:
+Run the application and monitoring extension as one Compose project so internal DNS names such as `backend`, `postgres`, `redis`, and `minio` resolve:
 
 ```bash
 docker compose \
