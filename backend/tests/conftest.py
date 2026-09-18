@@ -1,7 +1,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db import engine, get_db
 from app.main import app
 
@@ -31,3 +33,23 @@ async def api_client():
             await session.close()
             await outer.rollback()
             await engine.dispose()
+
+
+
+async def _clear_rate_limit_keys() -> None:
+    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        keys = [key async for key in redis.scan_iter(match="taskpilot:rate:*")]
+        if keys:
+            await redis.delete(*keys)
+    finally:
+        await redis.aclose()
+
+
+@pytest.fixture(autouse=True)
+async def isolate_rate_limits():
+    await _clear_rate_limit_keys()
+    try:
+        yield
+    finally:
+        await _clear_rate_limit_keys()
