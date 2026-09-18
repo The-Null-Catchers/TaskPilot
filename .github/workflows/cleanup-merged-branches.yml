@@ -21,9 +21,24 @@ jobs:
           set -euo pipefail
 
           for branch in \
-            "backup/account-lifecycle-wip" \
-            "feat/flutter-attachment-upload" \
-            "security/web-runtime-audit"; do
+            "dependabot/github_actions/actions/checkout-7" \
+            "dependabot/github_actions/actions/setup-node-7" \
+            "dependabot/github_actions/actions/setup-python-7" \
+            "dependabot/github_actions/actions/upload-artifact-7" \
+            "dependabot/npm_and_yarn/web/eslint-config-next-16.3.5" \
+            "dependabot/npm_and_yarn/web/lucide-react-1.46.0" \
+            "dependabot/npm_and_yarn/web/tailwindcss-4.3.3" \
+            "dependabot/npm_and_yarn/web/vitest-5.0.1" \
+            "dependabot/npm_and_yarn/web/zod-4.6.5" \
+            "dependabot/pip/backend/argon2-cffi-gte-23.1-and-lt-26" \
+            "dependabot/pip/backend/cryptography-gte-43-and-lt-51" \
+            "dependabot/pip/backend/pytest-asyncio-gte-0.24-and-lt-2" \
+            "dependabot/pip/backend/pytest-gte-8-and-lt-10" \
+            "dependabot/pip/backend/redis-gte-5-and-lt-9" \
+            "dependabot/pub/mobile/file_picker-11.0.3" \
+            "dependabot/pub/mobile/flutter_lints-6.0.0" \
+            "dependabot/pub/mobile/flutter_riverpod-3.4.3" \
+            "dependabot/pub/mobile/go_router-18.0.1"; do
             encoded=${branch//\//%2F}
             if gh api "repos/$REPO/git/ref/heads/$encoded" >/dev/null 2>&1; then
               echo "Deleting verified stale branch: $branch"
@@ -37,7 +52,7 @@ jobs:
             | while IFS= read -r branch; do
                 [ -n "$branch" ] || continue
                 case "$branch" in
-                  main|dependabot/*|backup/*)
+                  main|backup/*)
                     echo "Keeping $branch"
                     continue
                     ;;
