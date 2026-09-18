@@ -66,8 +66,9 @@ class BoardController extends StateNotifier<BoardState> {
     }
     try {
       final wsBase = apiBaseUrl.replaceFirst(RegExp(r'^http'), 'ws');
-      final uri = Uri.parse('$wsBase/api/v1/ws/workspaces/$workspaceId').replace(queryParameters: {'token': token});
+      final uri = Uri.parse('$wsBase/api/v1/ws/workspaces/$workspaceId');
       _channel = WebSocketChannel.connect(uri);
+      _channel!.sink.add(jsonEncode({'type': 'auth', 'token': token}));
       _channel!.stream.listen((message) {
         try {
           final payload = jsonDecode(message as String) as Map<String, dynamic>;
