@@ -10,7 +10,11 @@ body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,ui-s
 button,input,textarea,select { font:inherit; }
 button { cursor:pointer; }
 ::selection { background:rgba(91,92,226,.2); }
-.focus-ring:focus-visible { outline:3px solid color-mix(in srgb, var(--accent) 30%, transparent); outline-offset:2px; }
+.focus-ring:focus-visible,
+:where(button,a,input,textarea,select,[tabindex]):focus-visible {
+  outline:3px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  outline-offset:2px;
+}
 .panel { background:var(--panel); border:1px solid var(--line); }
 .muted { color:var(--muted); }
 .scrollbar::-webkit-scrollbar { width:8px; height:8px; }
