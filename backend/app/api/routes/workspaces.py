@@ -20,6 +20,7 @@ from app.collaboration_schemas import (
     WorkspaceUpdate,
 )
 from app.core.security import new_refresh_token, token_digest
+from app.notification_security import encrypt_text
 from app.db import get_db
 from app.domain import can_invite_role, can_manage_member
 from app.models import Project, User, Workspace, WorkspaceInvitation, WorkspaceMember
@@ -318,6 +319,8 @@ async def create_invitation(
         email=email,
         role=data.role,
         token_hash=token_digest(raw_token),
+        delivery_token_ciphertext=encrypt_text(raw_token),
+        delivery_status="pending",
         expires_at=now + timedelta(days=7),
     )
     db.add(invitation)
