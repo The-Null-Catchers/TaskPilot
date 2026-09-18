@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test'
 
-const API = 'http://127.0.0.1:8000/api/v1'
+const API = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000/api/v1'
 const PASSWORD = 'TaskPilot-E2E-2026!'
 
 type Auth = {
