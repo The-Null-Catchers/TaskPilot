@@ -9,8 +9,10 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,10 +42,19 @@ from app.core.config import settings
 from app.core.security import decode_access_token
 from app.db import SessionLocal, get_db
 from app.models import User
+from app.observability import (
+    HTTP_LATENCY,
+    HTTP_REQUESTS,
+    REALTIME_FAILURES,
+    WEBSOCKET_CONNECTIONS,
+    configure_logging,
+    report_exception,
+    request_id_var,
+)
 from app.realtime import channel
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s %(message)s')
-logger = logging.getLogger('taskpilot')
+configure_logging()
+logger = logging.getLogger("taskpilot")
 
 
 @asynccontextmanager
@@ -83,30 +94,45 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 async def request_context(request: Request, call_next):
     supplied = request.headers.get("x-request-id", "")
     request_id = supplied if _REQUEST_ID_RE.fullmatch(supplied) else uuid4().hex
+    context_token = request_id_var.set(request_id)
     started = time.perf_counter()
+    response = None
     try:
         response = await call_next(request)
+        return response
     except Exception:
         duration_ms = (time.perf_counter() - started) * 1000
-        logger.exception(
-            "request_failed request_id=%s method=%s path=%s duration_ms=%.1f",
-            request_id,
-            request.method,
-            request.url.path,
-            duration_ms,
+        report_exception(
+            logger,
+            "request_failed",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status=500,
+            duration_ms=round(duration_ms, 1),
         )
         raise
-    duration_ms = (time.perf_counter() - started) * 1000
-    response.headers["X-Request-ID"] = request_id
-    logger.info(
-        "request_complete request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
-        request_id,
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration_ms,
-    )
-    return response
+    finally:
+        duration_seconds = time.perf_counter() - started
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", None) or "unmatched"
+        status_code = response.status_code if response is not None else 500
+        HTTP_REQUESTS.labels(request.method, route_path, str(status_code)).inc()
+        HTTP_LATENCY.labels(request.method, route_path).observe(duration_seconds)
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+            logger.info(
+                "request_complete",
+                extra={
+                    "event": "request_complete",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "route": route_path,
+                    "status": status_code,
+                    "duration_ms": round(duration_seconds * 1000, 1),
+                },
+            )
+        request_id_var.reset(context_token)
 
 
 @app.middleware("http")
@@ -217,6 +243,17 @@ async def health(db: AsyncSession = Depends(get_db)):
     return checks
 
 
+@app.get("/metrics", include_in_schema=False)
+async def metrics(request: Request):
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
+    if settings.metrics_token:
+        expected = f"Bearer {settings.metrics_token}"
+        if request.headers.get("authorization") != expected:
+            raise HTTPException(status_code=401, detail="Metrics authentication required")
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.websocket('/api/v1/ws/workspaces/{workspace_id}')
 async def workspace_socket(websocket: WebSocket, workspace_id: str):
     from uuid import UUID
@@ -252,21 +289,38 @@ async def workspace_socket(websocket: WebSocket, workspace_id: str):
 
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     pubsub = redis.pubsub()
+    connected = False
     try:
         await pubsub.subscribe(channel(wid))
+        WEBSOCKET_CONNECTIONS.inc()
+        connected = True
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if message and message.get('data'):
-                await websocket.send_text(message['data'])
+            if message and message.get("data"):
+                await websocket.send_text(message["data"])
             try:
                 incoming = await asyncio.wait_for(websocket.receive_text(), timeout=0.05)
-                if incoming == 'ping':
-                    await websocket.send_text(json.dumps({'event': 'pong'}))
+                if incoming == "ping":
+                    await websocket.send_text(json.dumps({"event": "pong"}))
             except TimeoutError:
                 pass
     except WebSocketDisconnect:
         pass
+    except RedisError:
+        REALTIME_FAILURES.labels("websocket_redis").inc()
+        report_exception(
+            logger,
+            "websocket_realtime_failure",
+            workspace_id=str(wid),
+            operation="websocket_redis",
+        )
+        await websocket.close(code=1011)
     finally:
-        await pubsub.unsubscribe(channel(wid))
+        if connected:
+            WEBSOCKET_CONNECTIONS.dec()
+        try:
+            await pubsub.unsubscribe(channel(wid))
+        except RedisError:
+            REALTIME_FAILURES.labels("websocket_unsubscribe").inc()
         await pubsub.aclose()
         await redis.aclose()
