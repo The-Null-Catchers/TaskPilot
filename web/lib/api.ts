@@ -11,6 +11,7 @@ export type Subtask = { id:string; task_id:string; title:string; status:'open'|'
 export type Checklist = { id:string; task_id:string; title:string; position:number; created_at:string }
 export type ChecklistItem = { id:string; checklist_id:string; title:string; completed:boolean; assignee_id:string|null; position:number; version:number; created_at:string; updated_at:string }
 export type UserSummary = { id:string; email:string; name:string }
+export type Label = { id:string; workspace_id:string; name:string; color:string }
 export type TaskCollaborationState = { blocked:boolean; blocking_task_ids:string[]; watching:boolean; watcher_count:number }
 export type TaskDependency = { id:string; blocker_task_id:string; blocked_task_id:string; created_by_id:string; created_at:string }
 export type TaskDependencies = { blocked_by:TaskDependency[]; blocks:TaskDependency[] }
