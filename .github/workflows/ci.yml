@@ -106,3 +106,23 @@ jobs:
             mobile/build/app/outputs/flutter-apk/app-release.apk
             mobile/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
+
+  docker:
+    name: Production Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production Compose
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          MINIO_ROOT_USER: ci-minio
+          MINIO_ROOT_PASSWORD: ci-minio-password
+          NEXT_PUBLIC_API_URL: https://api.example.com
+        run: |
+          cp .env.production.example .env
+          docker compose -f docker-compose.prod.yml config
+      - name: Build backend production image
+        run: docker build -t taskpilot-backend:ci ./backend
+      - name: Build web production image
+        run: docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com -t taskpilot-web:ci ./web
