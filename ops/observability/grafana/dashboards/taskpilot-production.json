@@ -178,7 +178,7 @@
       },
       "targets": [
         {
-          "expr": "{compose_service=~\"api|worker|beat\"}",
+          "expr": "{compose_service=~\"backend|worker|beat\"}",
           "refId": "A"
         }
       ],
