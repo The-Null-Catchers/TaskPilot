@@ -1,7 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { MessageSquare, Pencil, Plus, SmilePlus, Trash2, X } from 'lucide-react'
+import { MessageSquare, Pencil, Trash2, X } from 'lucide-react'
 import { FormEvent, useMemo, useState } from 'react'
 
 import { AttachmentsPanel } from '@/components/attachments-panel'
