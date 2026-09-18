@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api.dart';
+import '../../core/push_registration.dart';
 
 class AuthState {
   const AuthState({this.loading = false, this.authenticated = false, this.error});
@@ -10,11 +11,12 @@ class AuthState {
   AuthState copyWith({bool? loading, bool? authenticated, String? error}) => AuthState(loading: loading ?? this.loading, authenticated: authenticated ?? this.authenticated, error: error);
 }
 
-final authProvider = StateNotifierProvider<AuthController, AuthState>((ref) => AuthController(ref.watch(apiProvider))..restore());
+final authProvider = StateNotifierProvider<AuthController, AuthState>((ref) => AuthController(ref.watch(apiProvider), ref.watch(pushRegistrationProvider))..restore());
 
 class AuthController extends StateNotifier<AuthState> {
-  AuthController(this.api) : super(const AuthState(loading: true));
+  AuthController(this.api, this.pushRegistration) : super(const AuthState(loading: true));
   final ApiClient api;
+  final PushRegistrationService pushRegistration;
 
   Future<void> restore() async {
     final refresh = await api.storage.read(key: 'refresh_token');
@@ -24,6 +26,7 @@ class AuthController extends StateNotifier<AuthState> {
       await api.saveTokens(response.data as Map<String, dynamic>);
       state = const AuthState(authenticated: true);
     } catch (_) {
+      await pushRegistration.unregister();
       await api.clearTokens();
       state = const AuthState();
     }
@@ -55,6 +58,7 @@ class AuthController extends StateNotifier<AuthState> {
   }
 
   Future<void> logout() async {
+    await pushRegistration.unregister();
     await api.clearTokens();
     state = const AuthState();
   }
