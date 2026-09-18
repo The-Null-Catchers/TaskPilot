@@ -142,6 +142,109 @@ class TaskDetailScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _assignChecklistItem(
+    BuildContext context,
+    WidgetRef ref,
+    TaskDetailState state,
+    String checklistId,
+    ChecklistItemModel item,
+  ) async {
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Text('Assign checklist item', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_off_outlined),
+              title: const Text('Unassigned'),
+              onTap: () => Navigator.pop(context, ''),
+            ),
+            ...state.members.map(
+              (member) => ListTile(
+                leading: CircleAvatar(child: Text(member.name.substring(0, 1).toUpperCase())),
+                title: Text(member.name),
+                subtitle: Text(member.email),
+                trailing: item.assigneeId == member.id ? const Icon(Icons.check_rounded) : null,
+                onTap: () => Navigator.pop(context, member.id),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null) return;
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).assignChecklistItem(
+            checklistId,
+            item,
+            selected.isEmpty ? null : selected,
+          );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update checklist assignee.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _moveChecklistItem(
+    BuildContext context,
+    WidgetRef ref,
+    String checklistId,
+    ChecklistItemModel item,
+    ChecklistItemModel other,
+  ) async {
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).moveChecklistItem(checklistId, item, other);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not reorder checklist item. Refresh and try again.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _convertSubtask(
+    BuildContext context,
+    WidgetRef ref,
+    SubtaskItem item,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Convert to task?'),
+        content: Text('“${item.title}” will become a standalone task in this project.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Convert')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).convertSubtask(item.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Subtask converted to a standalone task.')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not convert subtask.')),
+        );
+      }
+    }
+  }
+
   TaskItem? _projectTask(TaskDetailState state, String id) {
     for (final item in state.projectTasks) {
       if (item.id == id) return item;
@@ -322,10 +425,111 @@ class TaskDetailScreen extends ConsumerWidget {
                       const SizedBox(height: 28),
                       _SectionHeader(title: 'Subtasks', icon: Icons.account_tree_outlined, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'Add subtask', label: 'Title'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addSubtask(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
                       const SizedBox(height: 6),
-                      if (state.subtasks.isEmpty) const Text('No cached subtasks. New subtasks can still be queued offline.') else ...state.subtasks.map((item) => CheckboxListTile(contentPadding: EdgeInsets.zero, value: item.status == 'done', title: Text(item.title, style: TextStyle(decoration: item.status == 'done' ? TextDecoration.lineThrough : null)), onChanged: (_) async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleSubtask(item); if (context.mounted) _showOutcome(context, outcome); })),
+                      if (state.subtasks.isEmpty)
+                        const Text('No cached subtasks. New subtasks can still be queued offline.')
+                      else
+                        ...state.subtasks.map(
+                          (item) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Checkbox(
+                              value: item.status == 'done',
+                              onChanged: (_) async {
+                                final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleSubtask(item);
+                                if (context.mounted) _showOutcome(context, outcome);
+                              },
+                            ),
+                            title: Text(
+                              item.title,
+                              style: TextStyle(decoration: item.status == 'done' ? TextDecoration.lineThrough : null),
+                            ),
+                            trailing: state.offline
+                                ? null
+                                : IconButton(
+                                    onPressed: () => _convertSubtask(context, ref, item),
+                                    icon: const Icon(Icons.open_in_new_rounded),
+                                    tooltip: 'Convert to task',
+                                  ),
+                          ),
+                        ),
                       const SizedBox(height: 24),
                       _SectionHeader(title: 'Checklists', icon: Icons.checklist_rounded, action: IconButton(onPressed: () async { final title = await _askText(context, title: 'New checklist', label: 'Checklist title', maxLength: 160); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklist(title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded))),
-                      ...state.checklists.map((checklist) => Card(elevation: 0, margin: const EdgeInsets.only(top: 10), child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Expanded(child: Text(checklist.title, style: const TextStyle(fontWeight: FontWeight.w700))), IconButton(onPressed: () async { final title = await _askText(context, title: 'Checklist item', label: 'Item'); if (title != null && title.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklistItem(checklist.id, title); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_rounded), tooltip: 'Add item')]), ...checklist.items.map((item) => CheckboxListTile(dense: true, contentPadding: EdgeInsets.zero, value: item.completed, title: Text(item.title, style: TextStyle(decoration: item.completed ? TextDecoration.lineThrough : null)), onChanged: (_) async { final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleChecklistItem(checklist.id, item); if (context.mounted) _showOutcome(context, outcome); }))])))),
+                      ...state.checklists.map((checklist) {
+                        final ordered = [...checklist.items]..sort((a, b) => a.position.compareTo(b.position));
+                        return Card(
+                          elevation: 0,
+                          margin: const EdgeInsets.only(top: 10),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(child: Text(checklist.title, style: const TextStyle(fontWeight: FontWeight.w700))),
+                                    IconButton(
+                                      onPressed: () async {
+                                        final title = await _askText(context, title: 'Checklist item', label: 'Item');
+                                        if (title != null && title.isNotEmpty) {
+                                          final outcome = await ref.read(taskDetailProvider(taskId).notifier).addChecklistItem(checklist.id, title);
+                                          if (context.mounted) _showOutcome(context, outcome);
+                                        }
+                                      },
+                                      icon: const Icon(Icons.add_rounded),
+                                      tooltip: 'Add item',
+                                    ),
+                                  ],
+                                ),
+                                ...ordered.asMap().entries.map((entry) {
+                                  final index = entry.key;
+                                  final item = entry.value;
+                                  PersonItem? assignee;
+                                  for (final member in state.members) {
+                                    if (member.id == item.assigneeId) {
+                                      assignee = member;
+                                      break;
+                                    }
+                                  }
+                                  return ListTile(
+                                    dense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Checkbox(
+                                      value: item.completed,
+                                      onChanged: (_) async {
+                                        final outcome = await ref.read(taskDetailProvider(taskId).notifier).toggleChecklistItem(checklist.id, item);
+                                        if (context.mounted) _showOutcome(context, outcome);
+                                      },
+                                    ),
+                                    title: Text(
+                                      item.title,
+                                      style: TextStyle(decoration: item.completed ? TextDecoration.lineThrough : null),
+                                    ),
+                                    subtitle: assignee == null ? null : Text('Assigned to ${assignee.name}'),
+                                    trailing: state.offline
+                                        ? null
+                                        : PopupMenuButton<String>(
+                                            tooltip: 'Checklist item actions',
+                                            onSelected: (value) {
+                                              if (value == 'assign') {
+                                                _assignChecklistItem(context, ref, state, checklist.id, item);
+                                              } else if (value == 'up' && index > 0) {
+                                                _moveChecklistItem(context, ref, checklist.id, item, ordered[index - 1]);
+                                              } else if (value == 'down' && index < ordered.length - 1) {
+                                                _moveChecklistItem(context, ref, checklist.id, item, ordered[index + 1]);
+                                              }
+                                            },
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(value: 'assign', child: Text('Assign member')),
+                                              PopupMenuItem(value: 'up', enabled: index > 0, child: const Text('Move up')),
+                                              PopupMenuItem(value: 'down', enabled: index < ordered.length - 1, child: const Text('Move down')),
+                                            ],
+                                          ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
                       const SizedBox(height: 28),
                       Card(
                         elevation: 0,

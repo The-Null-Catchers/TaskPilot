@@ -26,12 +26,28 @@ class SubtaskItem {
 }
 
 class ChecklistItemModel {
-  const ChecklistItemModel({required this.id, required this.title, required this.completed, required this.version});
+  const ChecklistItemModel({
+    required this.id,
+    required this.title,
+    required this.completed,
+    required this.version,
+    required this.position,
+    this.assigneeId,
+  });
   final String id;
   final String title;
   final bool completed;
   final int version;
-  factory ChecklistItemModel.fromJson(Map<String, dynamic> json) => ChecklistItemModel(id: json['id'] as String, title: json['title'] as String, completed: json['completed'] as bool, version: json['version'] as int);
+  final double position;
+  final String? assigneeId;
+  factory ChecklistItemModel.fromJson(Map<String, dynamic> json) => ChecklistItemModel(
+        id: json['id'] as String,
+        title: json['title'] as String,
+        completed: json['completed'] as bool,
+        version: json['version'] as int,
+        position: (json['position'] as num).toDouble(),
+        assigneeId: json['assignee_id'] as String?,
+      );
 }
 
 class ChecklistGroup {
@@ -289,6 +305,40 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}', data: {'version': item.version, 'completed': !item.completed}, label: 'Update checklist item');
     if (outcome == MutationOutcome.synced) await load(quiet: true);
     return outcome;
+  }
+
+  Future<void> assignChecklistItem(String checklistId, ChecklistItemModel item, String? assigneeId) async {
+    await api.dio.patch(
+      '/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}',
+      data: {'version': item.version, 'assignee_id': assigneeId},
+    );
+    await load(quiet: true);
+  }
+
+  Future<void> moveChecklistItem(
+    String checklistId,
+    ChecklistItemModel item,
+    ChecklistItemModel other,
+  ) async {
+    await Future.wait([
+      api.dio.patch(
+        '/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}',
+        data: {'version': item.version, 'position': other.position},
+      ),
+      api.dio.patch(
+        '/api/v1/tasks/$taskId/checklists/$checklistId/items/${other.id}',
+        data: {'version': other.version, 'position': item.position},
+      ),
+    ]);
+    await load(quiet: true);
+  }
+
+  Future<void> convertSubtask(String subtaskId) async {
+    await api.dio.post(
+      '/api/v1/tasks/$taskId/subtasks/$subtaskId/convert',
+      data: const <String, dynamic>{},
+    );
+    await load(quiet: true);
   }
 
   Future<void> toggleWatch() async {
