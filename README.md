@@ -291,6 +291,8 @@ Backend tests cover account lifecycle, authorization/isolation, collaboration, a
 
 Android artifacts are uploaded as `taskpilot-android`; the unsigned iOS `Runner.app` is uploaded as `taskpilot-ios-unsigned`. Playwright reports/traces are uploaded on E2E runs for failure analysis.
 
+To download the Android build from GitHub Actions, open the successful **TaskPilot CI** run for the target commit and download the `taskpilot-android` artifact. It contains both `app-release.apk` and `app-release.aab` produced by the gated Flutter release job.
+
 The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot currently pins Next.js 16.3.5 so the high-severity PostCSS advisory previously reported through Next's bundled dependency is not accepted by CI.
 
 Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, or signing password belongs in the repository. The unsigned iOS contributor gate stays in `ci.yml`; production archive/IPA/TestFlight automation is documented in [docs/IOS_RELEASE.md](docs/IOS_RELEASE.md).
