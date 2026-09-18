@@ -58,7 +58,7 @@ export function useDialogFocus<T extends HTMLElement>(
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown)
       if (previous && document.contains(previous)) {
-        requestAnimationFrame(() => previous.focus())
+        previous.focus()
       }
     }
   }, [open])
