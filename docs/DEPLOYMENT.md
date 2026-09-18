@@ -126,6 +126,8 @@ Operational implications:
 - SMTP failures can be inspected through invitation delivery state without exposing raw invitation tokens in logs
 - the creation response still returns the one-time secure invitation link so administrators are not blocked by a temporary SMTP outage
 
+For the complete release gate and post-deploy smoke sequence, use [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
 ## 12. Production checklist
 
 Before exposing TaskPilot publicly:
