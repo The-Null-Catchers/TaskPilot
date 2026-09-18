@@ -259,10 +259,11 @@ jobs:
           printf '%s' 'ci-metrics-token' > ops/observability/secrets/metrics_token
           docker compose -f docker-compose.prod.yml -f ops/observability/docker-compose.observability.yml config
           docker run --rm \
+            --entrypoint=/bin/promtool \
             -v "$PWD/ops/observability/prometheus:/etc/prometheus:ro" \
             -v "$PWD/ops/observability/secrets/metrics_token:/run/secrets/taskpilot_metrics_token:ro" \
             prom/prometheus:v3.14.0 \
-            promtool check config /etc/prometheus/prometheus.yml
+            check config /etc/prometheus/prometheus.yml
           docker run --rm \
             -v "$PWD/ops/observability/alloy:/etc/alloy:ro" \
             grafana/alloy:v1.12.0 \
