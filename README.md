@@ -259,16 +259,20 @@ Backend tests cover account lifecycle, authorization/isolation, collaboration, a
 
 ## CI/CD
 
-`.github/workflows/ci.yml` gates pull requests and `main` with four jobs:
+`.github/workflows/ci.yml` gates pull requests and `main` with six production-oriented jobs:
 
 1. backend Ruff, Alembic upgrade/downgrade verification, and pytest
-2. web lint, Vitest, TypeScript typecheck, and production Next.js build
-3. Flutter analyze, tests, release APK, release AAB, and artifact upload
-4. production Compose validation plus backend/web Docker image builds
+2. web production dependency audit, lint, Vitest, TypeScript typecheck, and Next.js build
+3. real Chromium E2E against FastAPI + PostgreSQL + Redis, covering registration → onboarding → project → task creation
+4. Flutter analyze/tests plus release APK and AAB builds
+5. Flutter analyze/tests plus unsigned iOS release build on macOS
+6. production Compose validation plus backend/web Docker image builds
 
-Android artifacts are uploaded as `taskpilot-android`.
+Android artifacts are uploaded as `taskpilot-android`; the unsigned iOS `Runner.app` is uploaded as `taskpilot-ios-unsigned`. Playwright reports/traces are uploaded on E2E runs for failure analysis.
 
-Store signing credentials must be supplied through CI secrets before Play Store publication; no keystore or signing password belongs in the repository.
+The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot currently pins Next.js 16.3.5 so the high-severity PostCSS advisory previously reported through Next's bundled dependency is not accepted by CI.
+
+Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, or signing password belongs in the repository.
 
 ## Production deployment
 
@@ -316,9 +320,9 @@ Implemented safeguards include:
 
 The core product is implemented. Remaining work is mostly release/operations depth rather than missing CRUD features:
 
-- full browser E2E coverage with Playwright or equivalent across login → workspace → project → collaboration flows
+- expand Playwright coverage beyond the current real registration → onboarding → project → task smoke journey into multi-user comments, permissions, archive/restore, and integration flows
 - broader Flutter widget/integration tests and device-level offline/reconnect scenarios
-- iOS signing, archive, and App Store CI/release workflow
+- signed iOS archive/App Store release workflow (unsigned release compilation is already gated in CI)
 - production Firebase/APNs platform configuration and real-device push validation
 - centralized error monitoring, log aggregation, uptime alerting, and SLO dashboards
 - OAuth providers if required by the target deployment
