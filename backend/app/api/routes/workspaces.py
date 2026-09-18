@@ -339,6 +339,8 @@ async def create_invitation(
         workspace_id=invitation.workspace_id,
         email=invitation.email,
         role=invitation.role,
+        delivery_status=invitation.delivery_status,
+        delivered_at=invitation.delivered_at,
         expires_at=invitation.expires_at,
         accepted_at=invitation.accepted_at,
         created_at=invitation.created_at,
