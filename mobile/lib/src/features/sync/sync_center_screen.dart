@@ -10,6 +10,7 @@ class SyncCenterScreen extends ConsumerWidget {
     return switch (status) {
       OfflineMutationStatus.pending => Theme.of(context).colorScheme.primary,
       OfflineMutationStatus.conflict => Theme.of(context).colorScheme.error,
+      OfflineMutationStatus.authRequired => Theme.of(context).colorScheme.secondary,
       OfflineMutationStatus.failed => Theme.of(context).colorScheme.tertiary,
     };
   }
@@ -17,6 +18,7 @@ class SyncCenterScreen extends ConsumerWidget {
   String _statusLabel(OfflineMutationStatus status) => switch (status) {
         OfflineMutationStatus.pending => 'Pending sync',
         OfflineMutationStatus.conflict => 'Needs review',
+        OfflineMutationStatus.authRequired => 'Sign in required',
         OfflineMutationStatus.failed => 'Failed',
       };
 
@@ -68,7 +70,11 @@ class SyncCenterScreen extends ConsumerWidget {
                                     style: const TextStyle(fontWeight: FontWeight.w700),
                                   ),
                                   const SizedBox(height: 3),
-                                  Text('${state.pendingCount} pending · ${state.conflictCount} conflicts'),
+                                  Text(
+                                    '${state.pendingCount} pending · '
+                                    '${state.conflictCount} conflicts · '
+                                    '${state.authRequiredCount} need sign-in',
+                                  ),
                                 ],
                               ),
                             ),
