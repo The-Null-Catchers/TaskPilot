@@ -46,7 +46,7 @@ jobs:
       JWT_SECRET: ci-only-secret-that-is-never-used-in-production
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -116,7 +116,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
