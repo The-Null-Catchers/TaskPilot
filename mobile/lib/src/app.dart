@@ -13,6 +13,7 @@ import 'features/projects/project_insights_screen.dart';
 import 'features/projects/projects_screen.dart';
 import 'features/search/global_search_screen.dart';
 import 'features/settings/account_settings_screen.dart';
+import 'features/settings/notification_preferences_screen.dart';
 import 'features/sync/sync_center_screen.dart';
 import 'features/tasks/my_tasks_screen.dart';
 import 'features/tasks/task_attachments_screen.dart';
@@ -39,6 +40,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),
       GoRoute(path: '/sync', builder: (_, __) => const SyncCenterScreen()),
       GoRoute(path: '/settings/account', builder: (_, __) => const AccountSettingsScreen()),
+      GoRoute(path: '/settings/notifications', builder: (_, __) => const NotificationPreferencesScreen()),
       GoRoute(path: '/workspaces/:workspaceId/projects', builder: (_, state) => ProjectsScreen(workspaceId: state.pathParameters['workspaceId']!)),
       GoRoute(path: '/projects/:projectId', builder: (_, state) => BoardScreen(projectId: state.pathParameters['projectId']!)),
       GoRoute(path: '/projects/:projectId/insights', builder: (_, state) => ProjectInsightsScreen(projectId: state.pathParameters['projectId']!)),
