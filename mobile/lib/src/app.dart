@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/offline_queue.dart';
+import 'core/push_registration.dart';
 import 'features/auth/auth_controller.dart';
 import 'features/auth/login_screen.dart';
 import 'features/calendar/calendar_screen.dart';
@@ -67,6 +68,20 @@ class TaskPilotApp extends ConsumerWidget {
         ref.read(offlineQueueProvider.notifier).initialize().then((_) {
           if (next.authenticated) ref.read(offlineQueueProvider.notifier).sync();
         });
+        if (next.authenticated) {
+          ref.read(pushRegistrationProvider).initialize(
+            onOpen: (data) {
+              final entityType = data['entity_type']?.toString();
+              final entityId = data['entity_id']?.toString();
+              final router = ref.read(routerProvider);
+              if (entityType == 'task' && entityId != null && entityId.isNotEmpty) {
+                router.push('/tasks/$entityId');
+              } else {
+                router.push('/notifications');
+              }
+            },
+          );
+        }
       }
     });
     return MaterialApp.router(
