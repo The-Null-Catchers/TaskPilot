@@ -5,7 +5,7 @@ const externalBaseURL = process.env.E2E_BASE_URL
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
-  retries: process.env.CI ? 1 : 0,
+  retries: externalBaseURL ? 0 : process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
   use: {
