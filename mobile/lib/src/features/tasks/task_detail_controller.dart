@@ -341,6 +341,10 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     await load(quiet: true);
   }
 
+  Future<void> archiveTask() async {
+    await api.dio.post('/api/v1/tasks/$taskId/archive');
+  }
+
   Future<void> toggleWatch() async {
     await api.dio.request('/api/v1/tasks/$taskId/watch', options: Options(method: state.watching ? 'DELETE' : 'POST'));
     await load(quiet: true);

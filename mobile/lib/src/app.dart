@@ -16,6 +16,7 @@ import 'features/search/global_search_screen.dart';
 import 'features/settings/account_settings_screen.dart';
 import 'features/settings/notification_preferences_screen.dart';
 import 'features/sync/sync_center_screen.dart';
+import 'features/tasks/archived_tasks_screen.dart';
 import 'features/tasks/my_tasks_screen.dart';
 import 'features/tasks/comment_attachments_screen.dart';
 import 'features/tasks/task_attachments_screen.dart';
@@ -37,6 +38,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/my-tasks', builder: (_, __) => const MyTasksScreen()),
+      GoRoute(path: '/my-tasks/archived', builder: (_, __) => const ArchivedTasksScreen()),
       GoRoute(path: '/calendar', builder: (_, __) => const CalendarScreen()),
       GoRoute(path: '/search', builder: (_, __) => const GlobalSearchScreen()),
       GoRoute(path: '/notifications', builder: (_, __) => const NotificationsScreen()),

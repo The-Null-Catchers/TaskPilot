@@ -310,6 +310,36 @@ class TaskDetailScreen extends ConsumerWidget {
     if (context.mounted) _showOutcome(context, outcome);
   }
 
+  Future<void> _archiveTask(BuildContext context, WidgetRef ref, TaskItem task) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Archive task?'),
+        content: Text('Archive ${task.identifier}? You can restore it later from Archived tasks.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Archive')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(taskDetailProvider(taskId).notifier).archiveTask();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${task.identifier} archived.')),
+        );
+        context.go('/my-tasks');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not archive task.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(taskDetailProvider(taskId));
@@ -331,7 +361,31 @@ class TaskDetailScreen extends ConsumerWidget {
               tooltip: state.watching ? 'Unwatch task' : 'Watch task',
             ),
           if (task != null) IconButton(onPressed: () => _editTask(context, ref, state), icon: const Icon(Icons.edit_rounded), tooltip: 'Edit task'),
-          IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(taskDetailProvider(taskId).notifier).load(); }, icon: const Icon(Icons.refresh_rounded)),
+          IconButton(
+            onPressed: () async {
+              await ref.read(offlineQueueProvider.notifier).sync();
+              await ref.read(taskDetailProvider(taskId).notifier).load();
+            },
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Refresh',
+          ),
+          if (task != null)
+            PopupMenuButton<String>(
+              tooltip: 'Task actions',
+              onSelected: (value) {
+                if (value == 'archive') _archiveTask(context, ref, task);
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'archive',
+                  enabled: !state.offline,
+                  child: const ListTile(
+                    leading: Icon(Icons.archive_outlined),
+                    title: Text('Archive task'),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: SafeArea(
