@@ -192,8 +192,10 @@ test.describe.serial('multi-user collaboration', () => {
     const realtimeEvent = await page.evaluate(
       async ({ api, workspaceId, taskId, token, columnId, version }) => {
         return await new Promise<{ event: string; payload: { id?: string } }>((resolve, reject) => {
+          const apiUrl = new URL(api)
+          const socketProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
           const socket = new WebSocket(
-            `ws://127.0.0.1:8000/api/v1/ws/workspaces/${workspaceId}`,
+            `${socketProtocol}//${apiUrl.host}/api/v1/ws/workspaces/${workspaceId}`,
           )
           const timer = window.setTimeout(() => {
             socket.close()
