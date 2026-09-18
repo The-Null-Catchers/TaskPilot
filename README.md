@@ -284,7 +284,7 @@ Backend tests cover account lifecycle, authorization/isolation, collaboration, a
 
 1. backend Ruff, Alembic upgrade/downgrade verification, and pytest
 2. web production dependency audit, lint, Vitest, TypeScript typecheck, and Next.js build
-3. real Chromium E2E against FastAPI + PostgreSQL + Redis, covering registration → onboarding → project → task creation
+3. real Chromium E2E against FastAPI + PostgreSQL + Redis, covering registration/onboarding plus multi-user invitations, permissions, guest isolation, assignment, comments/mentions, notification receipt, realtime task movement, optimistic conflicts, completion, archive/restore, saved views, API-token scope/revocation, webhook lifecycle, and session revocation
 4. Flutter analyze/tests plus release APK and AAB builds
 5. Flutter analyze/tests plus unsigned iOS release build on macOS
 6. production Compose validation plus backend/web Docker image builds
@@ -339,17 +339,16 @@ Implemented safeguards include:
 
 ## Remaining work
 
-The core product is implemented. Remaining work is mostly release/operations depth rather than missing CRUD features:
+The canonical implementation is now on `main`; repository cleanup, multi-user E2E expansion, Flutter offline/auth-expiry regression coverage, signed iOS release automation, production observability primitives, security regressions, demo data, accessibility fixes, and release/rollback runbooks are already implemented.
 
-- expand Playwright coverage beyond the current real registration → onboarding → project → task smoke journey into multi-user comments, permissions, archive/restore, and integration flows
-- broader Flutter widget/integration tests and device-level offline/reconnect scenarios
-- signed iOS archive/App Store release workflow (unsigned release compilation is already gated in CI)
-- production Firebase/APNs platform configuration and real-device push validation
-- centralized error monitoring, log aggregation, uptime alerting, and SLO dashboards
-- OAuth providers if required by the target deployment
-- polished portfolio screenshots/demo dataset and public hosted demo
-- final licensing decision before external distribution
-- optional AI assistance only after the core platform remains stable under production use
+What remains is deployment-specific or genuinely external validation rather than missing core product code:
+
+- inject production Firebase/APNs client/provider credentials and validate foreground/background/terminated push behavior on real Android/iOS devices
+- add object storage to the browser E2E environment before promoting attachment upload/download into Playwright; attachment IDOR and signed-download authorization are already covered in backend regressions
+- connect the provider-neutral logging/metrics/error-reporting hooks to the chosen production collectors and configure uptime, readiness, 5xx, p95 latency, PostgreSQL/Redis, Celery, webhook/notification exhaustion, and realtime alerts
+- capture polished screenshots from a real seeded deployment and publish a hosted demo when infrastructure is available
+- make the final licensing decision before external distribution
+- add OAuth/AI/automation integrations only if they are required after the production baseline remains stable
 
 ## Portfolio intent
 
