@@ -78,6 +78,85 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
 
+  web-e2e:
+    name: Web browser E2E
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: taskpilot
+          POSTGRES_USER: taskpilot
+          POSTGRES_PASSWORD: taskpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskpilot -d taskpilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://taskpilot:taskpilot@localhost:5432/taskpilot
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: e2e-only-secret-that-is-never-used-in-production
+      NOTIFICATION_SECRET: e2e-notification-secret
+      INTEGRATION_SECRET: e2e-integration-secret
+      CORS_ORIGINS: http://127.0.0.1:3000
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install backend
+        working-directory: backend
+        run: pip install '.[dev]'
+      - name: Apply migrations
+        working-directory: backend
+        run: alembic upgrade head
+      - name: Start API
+        working-directory: backend
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/taskpilot-api.log 2>&1 &
+          for attempt in {1..40}; do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/taskpilot-api.log
+          exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Run browser E2E
+        working-directory: web
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: taskpilot-playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: ignore
+
   flutter:
     name: Flutter analyze, test, and Android builds
     runs-on: ubuntu-latest
