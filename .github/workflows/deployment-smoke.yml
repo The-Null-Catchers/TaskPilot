@@ -1,0 +1,131 @@
+name: TaskPilot deployment smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_url:
+        description: Public HTTPS TaskPilot web origin for a resettable demo/staging deployment
+        required: true
+        type: string
+      api_url:
+        description: Public HTTPS TaskPilot API origin (without /api/v1)
+        required: true
+        type: string
+      confirm_resettable:
+        description: I confirm this target is a resettable demo/staging environment that may receive synthetic test data
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: taskpilot-deployment-smoke-${{ inputs.web_url }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Remote deployment smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_BASE_URL: ${{ inputs.web_url }}
+      E2E_API_URL: ${{ inputs.api_url }}/api/v1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate target safety
+        env:
+          WEB_URL: ${{ inputs.web_url }}
+          API_URL: ${{ inputs.api_url }}
+          CONFIRM_RESETTABLE: ${{ inputs.confirm_resettable }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM_RESETTABLE" != "true" ]]; then
+            echo "::error::Deployment smoke creates synthetic users/workspaces/tasks. Confirm the target is resettable."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import ipaddress
+          import socket
+          import sys
+          from urllib.parse import urlparse
+
+          for name in ("WEB_URL", "API_URL"):
+              import os
+              raw = os.environ[name].strip().rstrip("/")
+              parsed = urlparse(raw)
+
+              if parsed.scheme != "https":
+                  raise SystemExit(f"{name} must use HTTPS")
+              if not parsed.hostname:
+                  raise SystemExit(f"{name} must contain a hostname")
+              if parsed.username or parsed.password:
+                  raise SystemExit(f"{name} must not contain URL credentials")
+              if parsed.query or parsed.fragment:
+                  raise SystemExit(f"{name} must not contain a query string or fragment")
+              if parsed.path not in ("", "/"):
+                  raise SystemExit(f"{name} must be an origin only, without a path")
+
+              host = parsed.hostname.lower()
+              if host in {"localhost", "localhost.localdomain"} or host.endswith(".local"):
+                  raise SystemExit(f"{name} must not target localhost/private development names")
+
+              try:
+                  literal = ipaddress.ip_address(host)
+              except ValueError:
+                  literal = None
+              if literal is not None and not literal.is_global:
+                  raise SystemExit(f"{name} must not target a private/reserved IP address")
+
+              resolved = socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+              addresses = {item[4][0] for item in resolved}
+              if not addresses:
+                  raise SystemExit(f"{name} did not resolve")
+              for address in addresses:
+                  ip = ipaddress.ip_address(address)
+                  if not ip.is_global:
+                      raise SystemExit(f"{name} resolved to non-public address {address}")
+
+              print(f"{name} target accepted: {raw}")
+          PY
+
+      - name: Verify deployment health
+        env:
+          API_URL: ${{ inputs.api_url }}
+        run: |
+          set -euo pipefail
+          api="${API_URL%/}"
+          curl --fail --show-error --silent --location             --retry 3 --retry-delay 2 --max-time 15             "$api/health/live"
+          echo
+          curl --fail --show-error --silent --location             --retry 3 --retry-delay 2 --max-time 15             "$api/health/ready"
+          echo
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm install
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run deployed collaboration smoke suite
+        working-directory: web
+        run: npm run smoke:deployment
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: taskpilot-deployment-smoke-report
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: ignore
+          retention-days: 30
