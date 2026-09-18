@@ -17,6 +17,7 @@ from app.notification_models import (
     PushSubscription,
 )
 from app.notification_security import decrypt_json, decrypt_text
+from app.webhook_delivery import process_webhook_deliveries, queue_webhook_deliveries
 
 celery = Celery("taskpilot", broker=settings.redis_url, backend=settings.redis_url)
 celery.conf.beat_schedule = {
@@ -35,6 +36,10 @@ celery.conf.beat_schedule = {
     "notification-daily-digest": {
         "task": "taskpilot.notification_daily_digest",
         "schedule": crontab(hour=8, minute=10),
+    },
+    "webhook-dispatch-minute": {
+        "task": "taskpilot.webhook_dispatch",
+        "schedule": 60.0,
     },
 }
 celery.conf.timezone = "UTC"
@@ -356,3 +361,10 @@ def notification_hourly_digest() -> int:
 @celery.task(name="taskpilot.notification_daily_digest")
 def notification_daily_digest() -> int:
     return asyncio.run(_send_digest("daily", timedelta(days=1, hours=1)))
+
+
+@celery.task(name="taskpilot.webhook_dispatch")
+def webhook_dispatch() -> dict[str, int]:
+    queued = asyncio.run(queue_webhook_deliveries())
+    processed = asyncio.run(process_webhook_deliveries())
+    return {"queued": queued, "processed": processed}

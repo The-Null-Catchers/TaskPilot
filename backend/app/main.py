@@ -19,6 +19,7 @@ from app.api.routes import (
     analytics,
     attachments,
     auth,
+    integrations,
     notifications,
     personalization,
     planning,
@@ -51,12 +52,14 @@ async def lifespan(app: FastAPI):
             raise RuntimeError('STORAGE_SECRET must be changed in production')
         if not settings.notification_secret or settings.notification_secret.startswith('change-me'):
             raise RuntimeError('NOTIFICATION_SECRET must be set to a strong separate secret in production')
+        if not settings.integration_secret or settings.integration_secret.startswith('change-me'):
+            raise RuntimeError('INTEGRATION_SECRET must be set to a strong separate secret in production')
     yield
 
 
 app = FastAPI(
     title='TaskPilot API',
-    version='0.8.0',
+    version='0.9.0',
     openapi_url='/api/v1/openapi.json',
     docs_url='/api/v1/docs',
     lifespan=lifespan,
@@ -83,6 +86,8 @@ async def security_headers(request: Request, call_next):
     if settings.app_env == "production":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
 for router in (
     auth.router,
     account.router,
@@ -98,6 +103,7 @@ for router in (
     personalization.router,
     task_productivity.router,
     notifications.router,
+    integrations.router,
     search.router,
     activity.router,
     analytics.router,

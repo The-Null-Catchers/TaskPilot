@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     apns_private_key: str | None = None
     apns_bundle_id: str | None = None
     apns_use_sandbox: bool = False
+    integration_secret: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:
