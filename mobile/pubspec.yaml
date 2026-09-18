@@ -3,7 +3,7 @@ description: Native Flutter client for TaskPilot.
 publish_to: none
 version: 0.1.0+1
 environment:
-  sdk: '>=3.5.0 <4.0.0'
+  sdk: '>=3.6.0 <4.0.0'
 dependencies:
   flutter:
     sdk: flutter
@@ -16,6 +16,8 @@ dependencies:
   intl: ^0.20.1
   url_launcher: ^6.3.1
   file_picker: ^10.3.3
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
   cupertino_icons: ^1.0.8
 dev_dependencies:
   flutter_test:
