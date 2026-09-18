@@ -1,7 +1,10 @@
 import asyncio
 import json
 import logging
+import re
+import time
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -73,6 +76,39 @@ app.add_middleware(
 )
 
 
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    supplied = request.headers.get("x-request-id", "")
+    request_id = supplied if _REQUEST_ID_RE.fullmatch(supplied) else uuid4().hex
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = (time.perf_counter() - started) * 1000
+        logger.exception(
+            "request_failed request_id=%s method=%s path=%s duration_ms=%.1f",
+            request_id,
+            request.method,
+            request.url.path,
+            duration_ms,
+        )
+        raise
+    duration_ms = (time.perf_counter() - started) * 1000
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_complete request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
+
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -142,22 +178,40 @@ async def validation_error(_: Request, exc: RequestValidationError):
     )
 
 
-@app.get('/health')
-async def health(db: AsyncSession = Depends(get_db)):
+async def _readiness_checks(db: AsyncSession) -> dict[str, str]:
     checks = {'api': 'ok', 'database': 'error', 'redis': 'error'}
     try:
         await db.execute(text('SELECT 1'))
         checks['database'] = 'ok'
     except Exception:
-        logger.exception('Database health check failed')
+        logger.exception('Database readiness check failed')
     redis = Redis.from_url(settings.redis_url)
     try:
         await redis.ping()
         checks['redis'] = 'ok'
     except Exception:
-        logger.exception('Redis health check failed')
+        logger.exception('Redis readiness check failed')
     finally:
         await redis.aclose()
+    return checks
+
+
+@app.get('/health/live')
+async def health_live():
+    return {'api': 'ok'}
+
+
+@app.get('/health/ready')
+async def health_ready(db: AsyncSession = Depends(get_db)):
+    checks = await _readiness_checks(db)
+    if 'error' in checks.values():
+        raise HTTPException(status_code=503, detail=checks)
+    return checks
+
+
+@app.get('/health')
+async def health(db: AsyncSession = Depends(get_db)):
+    checks = await _readiness_checks(db)
     if 'error' in checks.values():
         raise HTTPException(status_code=503, detail=checks)
     return checks
