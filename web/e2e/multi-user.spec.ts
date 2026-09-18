@@ -32,7 +32,7 @@ test.describe.serial('multi-user collaboration', () => {
     page,
     request,
   }, testInfo) => {
-    const run = process.env.GITHUB_RUN_ID ?? `local-${testInfo.workerIndex}-${Date.now()}`
+    const run = process.env.GITHUB_RUN_ID\n      ? `${process.env.GITHUB_RUN_ID}-${testInfo.retry}`\n      : `local-${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`
     const a = await register(request, `e2e-a-${run}@example.com`, 'E2E User A')
     const b = await register(request, `e2e-b-${run}@example.com`, 'E2E User B')
     const guest = await register(request, `e2e-guest-${run}@example.com`, 'E2E Guest')
