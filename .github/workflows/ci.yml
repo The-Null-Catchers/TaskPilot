@@ -247,6 +247,27 @@ jobs:
         run: |
           cp .env.production.example .env
           docker compose -f docker-compose.prod.yml config
+      - name: Validate observability configuration
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          MINIO_ROOT_USER: ci-minio
+          MINIO_ROOT_PASSWORD: ci-minio-password
+          NEXT_PUBLIC_API_URL: https://api.example.com
+          GRAFANA_ADMIN_PASSWORD: ci-grafana-password
+        run: |
+          mkdir -p ops/observability/secrets
+          printf '%s' 'ci-metrics-token' > ops/observability/secrets/metrics_token
+          docker compose -f docker-compose.prod.yml -f ops/observability/docker-compose.observability.yml config
+          docker run --rm \
+            -v "$PWD/ops/observability/prometheus:/etc/prometheus:ro" \
+            -v "$PWD/ops/observability/secrets/metrics_token:/run/secrets/taskpilot_metrics_token:ro" \
+            prom/prometheus:v3.14.0 \
+            promtool check config /etc/prometheus/prometheus.yml
+          docker run --rm \
+            -v "$PWD/ops/observability/alloy:/etc/alloy:ro" \
+            grafana/alloy:v1.12.0 \
+            validate /etc/alloy/config.alloy
+          rm -f ops/observability/secrets/metrics_token
       - name: Build backend production image
         run: docker build -t taskpilot-backend:ci ./backend
       - name: Build web production image
