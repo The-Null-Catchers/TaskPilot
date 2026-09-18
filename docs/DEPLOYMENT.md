@@ -20,6 +20,8 @@ At minimum set strong values for:
 - `STORAGE_KEY` / `STORAGE_SECRET`
 - real `APP_URL`, `API_URL`, `NEXT_PUBLIC_API_URL`, and `CORS_ORIGINS`
 
+For production email/invitation delivery also configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and credentials when required by the provider. Workspace invitations remain usable through their one-time secure link when SMTP is absent, but automatic invitation email delivery will stay pending.
+
 Use independent random secrets; do not reuse the JWT, notification, integration, database, or storage credentials.
 
 `TRUST_PROXY_HEADERS=true` should only be enabled when the API is reachable exclusively through a reverse proxy that overwrites untrusted forwarding headers.
@@ -97,10 +99,34 @@ Compose recreates changed services. The migration service runs before the API an
 - Increase `CELERY_CONCURRENCY` independently for background workloads.
 - Run only one Celery Beat instance.
 - For multi-host deployment, move PostgreSQL, Redis, and object storage to durable managed services or dedicated clustered infrastructure.
-- WebSockets require the reverse proxy to support upgrade headers.
+- WebSockets require the reverse proxy to support upgrade headers. The workspace socket URL contains no access token; clients connect first and immediately send an authentication JSON frame. Avoid proxy rules that buffer or strip initial WebSocket client messages.
 - Redis must be shared by all API/worker instances because it backs realtime events, Celery, and distributed rate limiting.
 
-## 9. Production checklist
+
+## 10. Push notification deployment
+
+Backend push delivery is provider-driven and secret-free by default. Configure only the providers you actually use:
+
+- Web Push: `WEBPUSH_VAPID_PRIVATE_KEY`, `WEBPUSH_VAPID_PUBLIC_KEY`, `WEBPUSH_VAPID_SUBJECT`
+- FCM: `FCM_SERVICE_ACCOUNT_JSON`
+- APNs: `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID`, and `APNS_USE_SANDBOX` as appropriate
+
+Flutter FCM registration is runtime-optional. The mobile binary also needs the platform Firebase client configuration generated for your Firebase project. Keep deployment-specific Firebase configuration and signing credentials outside source control and inject/copy them as part of your release pipeline.
+
+Validate push on real devices before enabling it as a promised production channel. Server credentials being present does not prove that Android/iOS client entitlement and provider routing are correct.
+
+## 11. Invitation email delivery
+
+Workspace invitations are created synchronously but delivered asynchronously by Celery Beat/worker. The worker reads an encrypted one-time delivery token from PostgreSQL, attempts SMTP delivery, records delivery status/retries, and clears the encrypted copy after a successful send.
+
+Operational implications:
+
+- worker and Beat must both be running for automatic invitation email delivery
+- `APP_URL` must be the public web origin so emailed invitation links resolve correctly
+- SMTP failures can be inspected through invitation delivery state without exposing raw invitation tokens in logs
+- the creation response still returns the one-time secure invitation link so administrators are not blocked by a temporary SMTP outage
+
+## 12. Production checklist
 
 Before exposing TaskPilot publicly:
 
@@ -112,6 +138,8 @@ Before exposing TaskPilot publicly:
 - database and object-storage backups configured
 - SMTP configured and tested
 - push credentials configured only for channels in use
+- Flutter Firebase/APNs platform configuration included in signed release builds when mobile push is enabled
+- SMTP invitation delivery tested from worker to a real mailbox
 - MinIO console not exposed publicly
 - logs shipped to centralized storage
 - error/uptime monitoring configured
