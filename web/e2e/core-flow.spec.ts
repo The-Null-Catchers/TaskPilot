@@ -28,4 +28,17 @@ test('registers, onboards, and creates a task on the real board', async ({ page 
   await page.getByRole('button', { name: 'Create', exact: true }).click()
 
   await expect(page.getByText(title, { exact: true })).toBeVisible()
+
+  const createProject = page.getByRole('button', { name: 'Create project' })
+  await createProject.click()
+  const dialog = page.getByRole('dialog', { name: 'New project' })
+  await expect(dialog).toBeVisible()
+
+  await expect(page.getByRole('button', { name: 'Close new project dialog' })).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(dialog.getByRole('button', { name: 'Create project' })).toBeFocused()
+
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(createProject).toBeFocused()
 })
