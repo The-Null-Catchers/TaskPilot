@@ -21,7 +21,7 @@ describe('SafeMarkdown', () => {
 
   it('does not preserve javascript URLs', () => {
     const html = renderToStaticMarkup(
-      <SafeMarkdown source={'[unsafe](javascript:alert(1))'} />,
+      React.createElement(SafeMarkdown, { source: '[unsafe](javascript:alert(1))' }),
     )
 
     expect(html).not.toContain('javascript:')
@@ -29,7 +29,7 @@ describe('SafeMarkdown', () => {
 
   it('hardens rendered external links', () => {
     const html = renderToStaticMarkup(
-      <SafeMarkdown source={'[TaskPilot](https://example.com/task)'} />,
+      React.createElement(SafeMarkdown, { source: '[TaskPilot](https://example.com/task)' }),
     )
 
     expect(html).toContain('href="https://example.com/task"')
@@ -39,7 +39,9 @@ describe('SafeMarkdown', () => {
 
   it('supports GitHub-flavored Markdown tables', () => {
     const html = renderToStaticMarkup(
-      <SafeMarkdown source={'| Item | State |\n| --- | --- |\n| API | Done |'} />,
+      React.createElement(SafeMarkdown, {
+        source: '| Item | State |\n| --- | --- |\n| API | Done |',
+      }),
     )
 
     expect(html).toContain('<table')
