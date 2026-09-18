@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -40,8 +41,47 @@ class ChecklistGroup {
   final List<ChecklistItemModel> items;
 }
 
+class LabelItem {
+  const LabelItem({required this.id, required this.name, required this.color});
+  final String id;
+  final String name;
+  final String color;
+  factory LabelItem.fromJson(Map<String, dynamic> json) => LabelItem(id: json['id'] as String, name: json['name'] as String, color: json['color'] as String);
+}
+
+class DependencyItem {
+  const DependencyItem({required this.id, required this.blockerTaskId, required this.blockedTaskId});
+  final String id;
+  final String blockerTaskId;
+  final String blockedTaskId;
+  factory DependencyItem.fromJson(Map<String, dynamic> json) => DependencyItem(
+        id: json['id'] as String,
+        blockerTaskId: json['blocker_task_id'] as String,
+        blockedTaskId: json['blocked_task_id'] as String,
+      );
+}
+
 class TaskDetailState {
-  const TaskDetailState({this.loading = true, this.offline = false, this.pendingSync = false, this.conflict = false, this.task, this.comments = const [], this.assignees = const [], this.members = const [], this.subtasks = const [], this.checklists = const [], this.error});
+  const TaskDetailState({
+    this.loading = true,
+    this.offline = false,
+    this.pendingSync = false,
+    this.conflict = false,
+    this.task,
+    this.comments = const [],
+    this.assignees = const [],
+    this.members = const [],
+    this.subtasks = const [],
+    this.checklists = const [],
+    this.workspaceLabels = const [],
+    this.taskLabels = const [],
+    this.blockedBy = const [],
+    this.projectTasks = const [],
+    this.watching = false,
+    this.watcherCount = 0,
+    this.blocked = false,
+    this.error,
+  });
   final bool loading;
   final bool offline;
   final bool pendingSync;
@@ -52,6 +92,13 @@ class TaskDetailState {
   final List<PersonItem> members;
   final List<SubtaskItem> subtasks;
   final List<ChecklistGroup> checklists;
+  final List<LabelItem> workspaceLabels;
+  final List<LabelItem> taskLabels;
+  final List<DependencyItem> blockedBy;
+  final List<TaskItem> projectTasks;
+  final bool watching;
+  final int watcherCount;
+  final bool blocked;
   final String? error;
 }
 
@@ -74,6 +121,13 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         members: state.members,
         subtasks: state.subtasks,
         checklists: state.checklists,
+        workspaceLabels: state.workspaceLabels,
+        taskLabels: state.taskLabels,
+        blockedBy: state.blockedBy,
+        projectTasks: state.projectTasks,
+        watching: state.watching,
+        watcherCount: state.watcherCount,
+        blocked: state.blocked,
         error: state.error,
       );
 
@@ -103,7 +157,50 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         final itemResponse = await api.dio.get('/api/v1/tasks/$taskId/checklists/$id/items');
         checklists.add(ChecklistGroup(id: id, title: checklist['title'] as String, items: (itemResponse.data as List).map((item) => ChecklistItemModel.fromJson((item as Map).cast<String, dynamic>())).toList()));
       }
-      state = TaskDetailState(loading: false, task: task, comments: comments, assignees: assignees, members: members, subtasks: subtasks, checklists: checklists);
+      var workspaceLabels = <LabelItem>[];
+      var taskLabels = <LabelItem>[];
+      var blockedBy = <DependencyItem>[];
+      var projectTasks = <TaskItem>[];
+      var watching = false;
+      var watcherCount = 0;
+      var blocked = false;
+      try {
+        final labelResponses = await Future.wait([
+          api.dio.get('/api/v1/workspaces/${task.workspaceId}/labels'),
+          api.dio.get('/api/v1/tasks/$taskId/labels'),
+          api.dio.get('/api/v1/tasks/$taskId/collaboration-state'),
+          api.dio.get('/api/v1/tasks/$taskId/dependencies'),
+          api.dio.get('/api/v1/projects/${task.projectId}/board'),
+        ]);
+        workspaceLabels = (labelResponses[0].data as List).map((item) => LabelItem.fromJson((item as Map).cast<String, dynamic>())).toList();
+        taskLabels = (labelResponses[1].data as List).map((item) => LabelItem.fromJson((item as Map).cast<String, dynamic>())).toList();
+        final collaboration = (labelResponses[2].data as Map).cast<String, dynamic>();
+        watching = collaboration['watching'] == true;
+        watcherCount = (collaboration['watcher_count'] as num?)?.toInt() ?? 0;
+        blocked = collaboration['blocked'] == true;
+        final dependencies = (labelResponses[3].data as Map).cast<String, dynamic>();
+        blockedBy = ((dependencies['blocked_by'] as List?) ?? const []).map((item) => DependencyItem.fromJson((item as Map).cast<String, dynamic>())).toList();
+        final board = (labelResponses[4].data as Map).cast<String, dynamic>();
+        projectTasks = ((board['tasks'] as List?) ?? const []).map((item) => TaskItem.fromJson((item as Map).cast<String, dynamic>())).toList();
+      } catch (_) {
+        // Core task detail remains usable if optional collaboration metadata fails.
+      }
+      state = TaskDetailState(
+        loading: false,
+        task: task,
+        comments: comments,
+        assignees: assignees,
+        members: members,
+        subtasks: subtasks,
+        checklists: checklists,
+        workspaceLabels: workspaceLabels,
+        taskLabels: taskLabels,
+        blockedBy: blockedBy,
+        projectTasks: projectTasks,
+        watching: watching,
+        watcherCount: watcherCount,
+        blocked: blocked,
+      );
     } catch (_) {
       final cached = prefs.getString(cacheKey);
       if (cached != null) {
@@ -176,5 +273,30 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId/checklists/$checklistId/items/${item.id}', data: {'version': item.version, 'completed': !item.completed}, label: 'Update checklist item');
     if (outcome == MutationOutcome.synced) await load(quiet: true);
     return outcome;
+  }
+
+  Future<void> toggleWatch() async {
+    await api.dio.request('/api/v1/tasks/$taskId/watch', options: Options(method: state.watching ? 'DELETE' : 'POST'));
+    await load(quiet: true);
+  }
+
+  Future<void> addLabel(String labelId) async {
+    await api.dio.post('/api/v1/tasks/$taskId/labels', data: {'label_id': labelId});
+    await load(quiet: true);
+  }
+
+  Future<void> removeLabel(String labelId) async {
+    await api.dio.delete('/api/v1/tasks/$taskId/labels/$labelId');
+    await load(quiet: true);
+  }
+
+  Future<void> addDependency(String blockerTaskId) async {
+    await api.dio.post('/api/v1/tasks/$taskId/dependencies', data: {'blocker_task_id': blockerTaskId});
+    await load(quiet: true);
+  }
+
+  Future<void> removeDependency(String dependencyId) async {
+    await api.dio.delete('/api/v1/tasks/$taskId/dependencies/$dependencyId');
+    await load(quiet: true);
   }
 }
