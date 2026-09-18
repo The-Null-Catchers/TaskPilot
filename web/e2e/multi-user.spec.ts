@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test'
 
 const API = 'http://127.0.0.1:8000/api/v1'
 const PASSWORD = 'TaskPilot-E2E-2026!'
@@ -20,7 +20,7 @@ function authHeaders(auth: Auth) {
   return { Authorization: `Bearer ${auth.access_token}` }
 }
 
-async function expectStatus(response: Awaited<ReturnType<APIRequestContext['post']>>, status: number) {
+async function expectStatus(response: APIResponse, status: number) {
   expect(response.status(), await response.text()).toBe(status)
   return response
 }
@@ -318,7 +318,7 @@ test.describe.serial('multi-user collaboration', () => {
       data: {
         column_id: board.columns[0].id,
         position: 1000,
-        version: (await restore.json()).version,
+        version: restoredTask.version,
       },
     })
     expect(guestCannotMove.status(), await guestCannotMove.text()).toBe(403)
