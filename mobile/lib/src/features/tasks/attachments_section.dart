@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api.dart';
 
 class AttachmentsSection extends ConsumerStatefulWidget {
-  const AttachmentsSection({super.key, this.taskId, this.entityId, this.entityType = 'task', this.title = widget.title, this.emptyText = 'No attachments yet.'}) : assert(taskId != null || entityId != null);
+  const AttachmentsSection({super.key, this.taskId, this.entityId, this.entityType = 'task', this.title = 'Attachments', this.emptyText = 'No attachments yet.'}) : assert(taskId != null || entityId != null);
   final String? taskId;
   final String? entityId;
   final String entityType;
@@ -211,7 +211,7 @@ class _AttachmentsSectionState extends ConsumerState<AttachmentsSection> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Attachments',
+                widget.title,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
