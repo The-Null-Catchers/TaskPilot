@@ -1,0 +1,77 @@
+groups:
+  - name: taskpilot-api
+    rules:
+      - alert: TaskPilotReadinessFailure
+        expr: probe_success{job="blackbox",instance="http://api:8000/health/ready"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: TaskPilot readiness endpoint is failing
+
+      - alert: TaskPilotHigh5xxRate
+        expr: |
+          (
+            sum(rate(taskpilot_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(taskpilot_http_requests_total[5m])), 0.001)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: TaskPilot 5xx rate is above 5 percent
+
+      - alert: TaskPilotHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(taskpilot_http_request_duration_seconds_bucket[5m]))
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: TaskPilot API p95 latency is above 1.5 seconds
+
+      - alert: TaskPilotRealtimeFailures
+        expr: sum(rate(taskpilot_realtime_failures_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: TaskPilot realtime transport failures are continuing
+
+  - name: taskpilot-dependencies
+    rules:
+      - alert: TaskPilotPostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: PostgreSQL exporter cannot reach TaskPilot PostgreSQL
+
+      - alert: TaskPilotRedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Redis exporter cannot reach TaskPilot Redis
+
+      - alert: TaskPilotStorageDown
+        expr: probe_success{job="blackbox",instance="http://minio:9000/minio/health/ready"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: TaskPilot object storage readiness is failing
+
+      - alert: TaskPilotCeleryQueueBacklog
+        expr: redis_key_size{key="celery"} > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: TaskPilot Celery queue backlog is above 500 jobs
