@@ -95,13 +95,21 @@ class BoardData {
 }
 
 class CommentItem {
-  const CommentItem({required this.id, required this.taskId, required this.authorId, required this.body, required this.createdAt});
+  const CommentItem({required this.id, required this.taskId, required this.authorId, required this.body, required this.createdAt, this.editedAt});
   final String id;
   final String taskId;
   final String authorId;
   final String body;
   final String createdAt;
-  factory CommentItem.fromJson(Map<String, dynamic> json) => CommentItem(id: json['id'] as String, taskId: json['task_id'] as String, authorId: json['author_id'] as String, body: json['body'] as String, createdAt: json['created_at'] as String);
+  final String? editedAt;
+  factory CommentItem.fromJson(Map<String, dynamic> json) => CommentItem(
+        id: json['id'] as String,
+        taskId: json['task_id'] as String,
+        authorId: json['author_id'] as String,
+        body: json['body'] as String,
+        editedAt: json['edited_at'] as String?,
+        createdAt: json['created_at'] as String,
+      );
 }
 
 class NotificationItem {
