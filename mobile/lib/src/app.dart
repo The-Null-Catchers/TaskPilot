@@ -16,6 +16,7 @@ import 'features/settings/account_settings_screen.dart';
 import 'features/settings/notification_preferences_screen.dart';
 import 'features/sync/sync_center_screen.dart';
 import 'features/tasks/my_tasks_screen.dart';
+import 'features/tasks/comment_attachments_screen.dart';
 import 'features/tasks/task_attachments_screen.dart';
 import 'features/tasks/task_detail_screen.dart';
 
@@ -46,6 +47,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/projects/:projectId/insights', builder: (_, state) => ProjectInsightsScreen(projectId: state.pathParameters['projectId']!)),
       GoRoute(path: '/tasks/:taskId', builder: (_, state) => TaskDetailScreen(taskId: state.pathParameters['taskId']!)),
       GoRoute(path: '/tasks/:taskId/attachments', builder: (_, state) => TaskAttachmentsScreen(taskId: state.pathParameters['taskId']!)),
+      GoRoute(path: '/comments/:commentId/attachments', builder: (_, state) => CommentAttachmentsScreen(commentId: state.pathParameters['commentId']!)),
     ],
   );
 });
