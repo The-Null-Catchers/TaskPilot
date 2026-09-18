@@ -69,6 +69,20 @@ async def queue_webhook_deliveries(limit: int = 500) -> int:
     return created
 
 
+def _mark_failed_delivery(
+    delivery: WebhookDelivery,
+    error: str,
+    now: datetime,
+) -> None:
+    delivery.status = "failed"
+    delivery.last_error = error[:500]
+    if delivery.attempts < 5:
+        delivery.next_attempt_at = now + timedelta(minutes=2 ** delivery.attempts)
+    else:
+        delivery.status = "exhausted"
+        delivery.next_attempt_at = None
+
+
 def _payload(activity: ActivityLog) -> dict:
     return {
         "id": str(activity.id),
@@ -117,11 +131,13 @@ async def process_webhook_deliveries(limit: int = 100) -> int:
                 try:
                     url = validate_webhook_url(hook.url, production=settings.app_env == "production")
                     secret = decrypt_secret(hook.secret_ciphertext)
-                except (ValueError, Exception) as exc:
+                except Exception as exc:
                     delivery.attempts += 1
-                    delivery.status = "failed"
-                    delivery.last_error = f"configuration_error:{type(exc).__name__}"[:500]
-                    delivery.next_attempt_at = None
+                    _mark_failed_delivery(
+                        delivery,
+                        f"configuration_error:{type(exc).__name__}",
+                        now,
+                    )
                     processed += 1
                     continue
 
@@ -145,18 +161,17 @@ async def process_webhook_deliveries(limit: int = 100) -> int:
                         delivery.last_error = None
                         delivery.next_attempt_at = None
                     else:
-                        delivery.status = "failed"
-                        delivery.last_error = f"http_{response.status_code}"
+                        _mark_failed_delivery(
+                            delivery,
+                            f"http_{response.status_code}",
+                            now,
+                        )
                 except httpx.HTTPError as exc:
-                    delivery.status = "failed"
-                    delivery.last_error = f"network_error:{type(exc).__name__}"[:500]
-
-                if delivery.status == "failed":
-                    if delivery.attempts < 5:
-                        delivery.next_attempt_at = now + timedelta(minutes=2 ** delivery.attempts)
-                    else:
-                        delivery.status = "exhausted"
-                        delivery.next_attempt_at = None
+                    _mark_failed_delivery(
+                        delivery,
+                        f"network_error:{type(exc).__name__}",
+                        now,
+                    )
                 processed += 1
         await db.commit()
     return processed
