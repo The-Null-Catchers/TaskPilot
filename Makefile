@@ -1,8 +1,11 @@
-.PHONY: dev down logs test
+.PHONY: dev demo down logs test
 
 dev:
 	@test -f .env || cp .env.example .env
 	docker compose up --build
+
+demo:
+	docker compose exec backend python scripts/seed_demo.py --reset
 
 down:
 	docker compose down
