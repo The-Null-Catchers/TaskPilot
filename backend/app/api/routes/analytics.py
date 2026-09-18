@@ -1,8 +1,7 @@
-from collections import Counter
 from datetime import UTC, datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user, require_workspace
@@ -22,23 +21,46 @@ async def project_analytics(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     await require_workspace(db, project.workspace_id, user.id)
-    tasks = list(
-        (
-            await db.scalars(
-                select(Task).where(Task.project_id == project.id, Task.deleted_at.is_(None))
-            )
-        ).all()
-    )
+    filters = (Task.project_id == project.id, Task.deleted_at.is_(None))
     now = datetime.now(UTC)
-    completed = sum(task.status == "done" for task in tasks)
-    overdue = sum(bool(task.due_date and task.due_date < now and task.status != "done") for task in tasks)
-    total = len(tasks)
+    summary = (
+        await db.execute(
+            select(
+                func.count(Task.id),
+                func.count(Task.id).filter(Task.status == "done"),
+                func.count(Task.id).filter(
+                    Task.status != "done",
+                    Task.due_date.is_not(None),
+                    Task.due_date < now,
+                ),
+            ).where(*filters)
+        )
+    ).one()
+    total = int(summary[0] or 0)
+    completed = int(summary[1] or 0)
+    overdue = int(summary[2] or 0)
+
+    status_rows = (
+        await db.execute(
+            select(Task.status, func.count(Task.id))
+            .where(*filters)
+            .group_by(Task.status)
+        )
+    ).all()
+    priority_rows = (
+        await db.execute(
+            select(Task.priority, func.count(Task.id))
+            .where(*filters)
+            .group_by(Task.priority)
+        )
+    ).all()
+
     return {
         "total_tasks": total,
         "completed_tasks": completed,
         "open_tasks": total - completed,
         "overdue_tasks": overdue,
         "completion_percentage": round((completed / total * 100) if total else 0, 1),
-        "by_status": dict(Counter(task.status for task in tasks)),
-        "by_priority": dict(Counter(task.priority for task in tasks)),
+        "by_status": {status: int(count) for status, count in status_rows},
+        "by_priority": {priority: int(count) for priority, count in priority_rows},
     }
