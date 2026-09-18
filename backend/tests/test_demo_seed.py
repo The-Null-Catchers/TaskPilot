@@ -1,7 +1,7 @@
 import pytest
 
 from app.core import config
-from scripts.seed_demo import DEFAULT_PASSWORD, DEMO_EMAILS, seed
+from app.demo_seed import DEFAULT_PASSWORD, DEMO_EMAILS, seed
 
 
 def test_demo_seed_defaults_are_explicitly_local_only():
