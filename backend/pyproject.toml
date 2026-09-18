@@ -24,7 +24,8 @@ dependencies = [
   "Pillow>=10,<13",
   "cryptography>=43,<50",
   "httpx[http2]>=0.27,<1",
-  "pywebpush>=2,<3"
+  "pywebpush>=2,<3",
+  "prometheus-client>=0.21,<1"
 ]
 
 [project.optional-dependencies]

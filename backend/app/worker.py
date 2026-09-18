@@ -1,7 +1,10 @@
 import asyncio
+import logging
+import time
 from datetime import UTC, datetime, timedelta
 
 from celery import Celery
+from celery.signals import after_setup_logger, task_failure, task_postrun, task_prerun
 from celery.schedules import crontab
 from sqlalchemy import exists, or_, select
 
@@ -17,9 +20,64 @@ from app.notification_models import (
     PushSubscription,
 )
 from app.notification_security import decrypt_json, decrypt_text
+from app.observability import configure_logging
 from app.webhook_delivery import process_webhook_deliveries, queue_webhook_deliveries
 
+logger = logging.getLogger("taskpilot.worker")
+_task_started: dict[str, float] = {}
+
 celery = Celery("taskpilot", broker=settings.redis_url, backend=settings.redis_url)
+celery.conf.worker_send_task_events = True
+celery.conf.task_send_sent_event = True
+
+
+@after_setup_logger.connect
+def configure_worker_logging(**_kwargs):
+    configure_logging()
+
+
+@task_prerun.connect
+def log_task_started(task_id=None, task=None, **_kwargs):
+    if task_id:
+        _task_started[str(task_id)] = time.perf_counter()
+    logger.info(
+        "worker_task_started",
+        extra={
+            "event": "worker_task_started",
+            "task_id": str(task_id) if task_id else None,
+            "task_name": getattr(task, "name", None),
+        },
+    )
+
+
+@task_postrun.connect
+def log_task_finished(task_id=None, task=None, state=None, **_kwargs):
+    started = _task_started.pop(str(task_id), None) if task_id else None
+    duration_ms = (time.perf_counter() - started) * 1000 if started is not None else None
+    logger.info(
+        "worker_task_finished",
+        extra={
+            "event": "worker_task_finished",
+            "task_id": str(task_id) if task_id else None,
+            "task_name": getattr(task, "name", None),
+            "status": state,
+            "duration_ms": round(duration_ms, 1) if duration_ms is not None else None,
+        },
+    )
+
+
+@task_failure.connect
+def log_task_failed(task_id=None, sender=None, exception=None, **_kwargs):
+    logger.error(
+        "worker_task_failed",
+        extra={
+            "event": "worker_task_failed",
+            "task_id": str(task_id) if task_id else None,
+            "task_name": getattr(sender, "name", None),
+            "status": type(exception).__name__ if exception is not None else "unknown",
+        },
+    )
+
 celery.conf.beat_schedule = {
     "deadline-reminders-hourly": {
         "task": "taskpilot.deadline_reminders",

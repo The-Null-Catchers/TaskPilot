@@ -4,6 +4,7 @@ from uuid import UUID
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from app.core.config import settings
+from app.observability import REALTIME_FAILURES, report_exception
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,13 @@ async def publish(workspace_id: UUID, event: str, payload: dict) -> None:
     try:
         await redis.publish(channel(workspace_id), json.dumps({"event": event, "payload": payload}, default=str))
     except RedisError:
-        logger.exception("Failed to publish realtime event", extra={"workspace_id": str(workspace_id), "event": event})
+        REALTIME_FAILURES.labels("publish").inc()
+        report_exception(
+            logger,
+            "realtime_publish_failed",
+            workspace_id=str(workspace_id),
+            event=event,
+            operation="publish",
+        )
     finally:
         await redis.aclose()
