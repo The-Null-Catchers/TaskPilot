@@ -7,7 +7,7 @@ import 'package:taskpilot_mobile/src/core/offline_queue.dart';
 import 'package:taskpilot_mobile/src/features/sync/sync_center_screen.dart';
 
 class _TestOfflineQueueController extends OfflineQueueController {
-  _TestOfflineQueueController(ApiClient api, OfflineQueueState initial) : super(api) {
+  _TestOfflineQueueController(super.api, OfflineQueueState initial) {
     state = initial;
   }
 
