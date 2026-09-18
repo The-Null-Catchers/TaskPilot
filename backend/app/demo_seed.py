@@ -3,7 +3,7 @@ import asyncio
 import os
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.account_models import AccountSecurity
 from app.collaboration_models import (
