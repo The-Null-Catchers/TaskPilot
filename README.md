@@ -291,7 +291,7 @@ The production stack provides:
 
 Use a TLS-terminating reverse proxy or managed load balancer in front of web/API/object storage. PostgreSQL and Redis should not be internet-accessible.
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Backup/restore and rollback procedures are in [docs/BACKUP_RESTORE_ROLLBACK.md](docs/BACKUP_RESTORE_ROLLBACK.md). Production logging, metrics, worker visibility, alerting, and vendor-neutral Sentry/OpenTelemetry/Prometheus integration guidance are in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Backup/restore and rollback procedures are in [docs/BACKUP_RESTORE_ROLLBACK.md](docs/BACKUP_RESTORE_ROLLBACK.md), and the production gate is captured in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md). Production logging, metrics, worker visibility, alerting, and vendor-neutral Sentry/OpenTelemetry/Prometheus integration guidance are in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## Security posture
 
