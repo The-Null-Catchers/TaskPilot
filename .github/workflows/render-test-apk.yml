@@ -1,0 +1,42 @@
+name: TaskPilot Render test APK
+
+on:
+  push:
+    branches:
+      - build/render-test-apk
+
+permissions:
+  contents: read
+
+jobs:
+  android-test-apk:
+    name: Build Render test APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android host project
+        run: |
+          rm -rf android
+          flutter create /tmp/taskpilot_android_test \
+            --platforms=android \
+            --project-name=taskpilot_mobile \
+            --org=dev.taskpilot
+          cp -R /tmp/taskpilot_android_test/android ./android
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build APK for Render test backend
+        run: flutter build apk --release --dart-define=API_URL=https://taskpilot-api-test.onrender.com
+      - uses: actions/upload-artifact@v7
+        with:
+          name: taskpilot-render-test-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
