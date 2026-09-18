@@ -205,6 +205,27 @@ Default local services:
 - Health: `http://localhost:8000/health`
 - MinIO console: `http://localhost:9001`
 
+### Demo dataset
+
+With the local Compose stack running, create or reset a realistic portfolio dataset with:
+
+```bash
+make demo
+```
+
+The seeder creates the **Northstar Product Team** workspace with three verified demo users, two projects, populated Kanban columns, assignments, labels, comments, checklists, subtasks, dependencies, deadlines, milestones, and activity history used by analytics views.
+
+Default local demo login:
+
+```text
+alex.demo@taskpilot.local
+TaskPilot-Demo-2026!
+```
+
+The other demo accounts are `maya.demo@taskpilot.local` and `sam.demo@taskpilot.local`. Set `TASKPILOT_DEMO_PASSWORD` inside the backend container/environment to override the default password.
+
+The seed command refuses to run when `APP_ENV=production`. It is intended only for local evaluation, screenshots, demos, and portfolio review.
+
 ## Flutter development
 
 The repository intentionally keeps generated Android host files out of source control. CI creates the Android host before building.
