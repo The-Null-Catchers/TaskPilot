@@ -10,6 +10,10 @@ export function useDialogFocus<T extends HTMLElement>(
   onClose: () => void,
 ): RefObject<T | null> {
   const ref = useRef<T>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (!open || !ref.current) return
@@ -27,7 +31,7 @@ export function useDialogFocus<T extends HTMLElement>(
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab') return
@@ -55,7 +59,7 @@ export function useDialogFocus<T extends HTMLElement>(
       dialog.removeEventListener('keydown', handleKeyDown)
       previous?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   return ref
 }
