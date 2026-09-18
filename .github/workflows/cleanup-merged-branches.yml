@@ -20,6 +20,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          for branch in \
+            "backup/account-lifecycle-wip" \
+            "feat/flutter-attachment-upload" \
+            "security/web-runtime-audit"; do
+            encoded=${branch//\//%2F}
+            if gh api "repos/$REPO/git/ref/heads/$encoded" >/dev/null 2>&1; then
+              echo "Deleting verified stale branch: $branch"
+              gh api --method DELETE "repos/$REPO/git/refs/heads/$encoded"
+            fi
+          done
+
           gh api --paginate "repos/$REPO/pulls?state=closed&per_page=100" \
             --jq '.[] | select(.merged_at != null) | .head.ref' \
             | sort -u \
