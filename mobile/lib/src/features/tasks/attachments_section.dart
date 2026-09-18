@@ -7,8 +7,14 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/api.dart';
 
 class AttachmentsSection extends ConsumerStatefulWidget {
-  const AttachmentsSection({super.key, required this.taskId});
-  final String taskId;
+  const AttachmentsSection({super.key, this.taskId, this.entityId, this.entityType = 'task', this.title = widget.title, this.emptyText = 'No attachments yet.'}) : assert(taskId != null || entityId != null);
+  final String? taskId;
+  final String? entityId;
+  final String entityType;
+  final String title;
+  final String emptyText;
+
+  String get resolvedEntityId => entityId ?? taskId!;
 
   @override
   ConsumerState<AttachmentsSection> createState() => _AttachmentsSectionState();
@@ -36,7 +42,7 @@ class _AttachmentsSectionState extends ConsumerState<AttachmentsSection> {
     try {
       final response = await ref.read(apiProvider).dio.get(
         '/api/v1/attachments',
-        queryParameters: {'entity_type': 'task', 'entity_id': widget.taskId},
+        queryParameters: {'entity_type': widget.entityType, 'entity_id': widget.resolvedEntityId},
       );
       if (!mounted) return;
       setState(() {
@@ -91,8 +97,8 @@ class _AttachmentsSectionState extends ConsumerState<AttachmentsSection> {
 
     try {
       final form = FormData.fromMap({
-        'entity_type': 'task',
-        'entity_id': widget.taskId,
+        'entity_type': widget.entityType,
+        'entity_id': widget.resolvedEntityId,
         'file': MultipartFile.fromBytes(bytes, filename: picked.name),
       });
       await ref.read(apiProvider).dio.post(
@@ -237,9 +243,9 @@ class _AttachmentsSectionState extends ConsumerState<AttachmentsSection> {
             child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         if (!_loading && _error == null && _items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('No attachments yet. Upload a file to keep project context with the task.'),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(widget.emptyText),
           ),
         if (_items.isNotEmpty)
           Card(
