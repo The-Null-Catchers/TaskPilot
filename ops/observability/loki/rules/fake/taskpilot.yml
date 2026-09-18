@@ -1,0 +1,49 @@
+groups:
+  - name: taskpilot-worker-logs
+    rules:
+      - alert: TaskPilotCeleryTaskFailure
+        expr: |
+          sum(count_over_time({compose_service="worker"} | json | event="worker_task_failed" [5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: A TaskPilot Celery task has failed
+
+      - alert: TaskPilotNotificationDeliveryExhausted
+        expr: |
+          sum(count_over_time({compose_service="worker"} | json | event="notification_delivery_exhausted" [10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Notification delivery exhausted its retry budget
+
+      - alert: TaskPilotWebhookDeliveryExhausted
+        expr: |
+          sum(count_over_time({compose_service="worker"} | json | event="webhook_delivery_exhausted" [10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: Webhook delivery exhausted its retry budget
+
+  - name: taskpilot-api-logs
+    rules:
+      - alert: TaskPilotStorageOperationFailure
+        expr: |
+          sum(count_over_time({compose_service="api"} |~ "Object storage upload failed|Could not create attachment|Could not delete attachment objects" [5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: TaskPilot object storage operations are repeatedly failing
+
+      - alert: TaskPilotWebSocketFailure
+        expr: |
+          sum(count_over_time({compose_service="api"} | json | event="websocket_realtime_failure" [5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: TaskPilot WebSocket realtime failures are continuing
