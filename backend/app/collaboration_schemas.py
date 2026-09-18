@@ -47,6 +47,8 @@ class WorkspaceInvitationOut(ORMModel):
     workspace_id: UUID
     email: EmailStr
     role: str
+    delivery_status: str
+    delivered_at: datetime | None
     expires_at: datetime
     accepted_at: datetime | None
     created_at: datetime

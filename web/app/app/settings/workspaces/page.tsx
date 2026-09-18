@@ -21,6 +21,8 @@ type Invitation = {
   role:'admin'|'member'|'guest'
   expires_at:string
   accepted_at:string|null
+  delivery_status:'pending'|'sent'|'failed'
+  delivered_at:string|null
   created_at:string
 }
 type CreatedInvitation = Invitation & { token:string }
@@ -103,7 +105,7 @@ export default function WorkspaceSettingsPage(){
       },token)
       setInviteLink(`${window.location.origin}/invite/${created.token}`)
       e.currentTarget.reset()
-    },'Invitation created. Copy the secure link below for the invited email address.')
+    },'Invitation created. Email delivery is queued when SMTP is configured; the secure link is available below as a fallback.')
   }
 
   async function copyInvite(){
@@ -207,7 +209,7 @@ export default function WorkspaceSettingsPage(){
             <h2 className="font-semibold">Invite by email</h2><p className="mt-1 text-sm muted">Invitations expire after seven days and can only be accepted by the matching account email.</p>
             <form onSubmit={invite} className="mt-5 grid gap-3 sm:grid-cols-[1fr_150px_auto]"><input required type="email" name="email" placeholder="teammate@example.com" className="rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm"/><select name="role" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm">{actorRole==='owner'&&<option value="admin">Admin</option>}<option value="member">Member</option><option value="guest">Guest</option></select><button disabled={busy==='invite'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Create invite</button></form>
             {inviteLink&&<div className="mt-4 flex gap-2 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3"><input readOnly value={inviteLink} className="min-w-0 flex-1 bg-transparent text-xs outline-none"/><button onClick={()=>void copyInvite()} className="rounded-lg border border-[var(--line)] p-2" aria-label="Copy invitation link"><Copy size={15}/></button></div>}
-            <div className="mt-6"><p className="text-xs font-semibold uppercase tracking-wider muted">Active invitations</p><div className="mt-2 divide-y divide-[var(--line)]">{invitations.data?.length?invitations.data.map(invitation=><div key={invitation.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invitation.email}</p><p className="text-xs muted">{roleLabel(invitation.role)} · expires {new Date(invitation.expires_at).toLocaleDateString()}</p></div><button onClick={()=>void cancelInvitation(invitation)} disabled={busy===`invite:${invitation.id}`} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium">Cancel</button></div>):<p className="py-3 text-sm muted">No active invitations</p>}</div></div>
+            <div className="mt-6"><p className="text-xs font-semibold uppercase tracking-wider muted">Active invitations</p><div className="mt-2 divide-y divide-[var(--line)]">{invitations.data?.length?invitations.data.map(invitation=><div key={invitation.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invitation.email}</p><p className="text-xs muted">{roleLabel(invitation.role)} · expires {new Date(invitation.expires_at).toLocaleDateString()} · email {invitation.delivery_status}</p></div><button onClick={()=>void cancelInvitation(invitation)} disabled={busy===`invite:${invitation.id}`} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium">Cancel</button></div>):<p className="py-3 text-sm muted">No active invitations</p>}</div></div>
           </div>}
 
           {actorRole==='owner'&&<div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 sm:p-6"><h2 className="font-semibold text-red-700 dark:text-red-300">Danger zone</h2><p className="mt-1 text-sm muted">Deleting a workspace permanently removes its projects, tasks, memberships, and collaboration data.</p><button onClick={()=>void deleteWorkspace()} disabled={busy==='delete'} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white"><Trash2 size={15}/>Delete workspace</button></div>}

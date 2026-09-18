@@ -78,6 +78,21 @@ async def test_advanced_task_collaboration_flows(api_client):
         json={"email": member_email, "role": "member"},
     )
     assert invitation_response.status_code == 201, invitation_response.text
+    invitation_payload = invitation_response.json()
+    assert invitation_payload["delivery_status"] == "pending"
+    assert invitation_payload["delivered_at"] is None
+    assert invitation_payload["token"]
+
+    active_invitations = await api_client.get(
+        f"/api/v1/workspaces/{workspace['id']}/invitations",
+        headers=_headers(owner_token),
+    )
+    assert active_invitations.status_code == 200, active_invitations.text
+    listed_invitation = next(
+        item for item in active_invitations.json() if item["id"] == invitation_payload["id"]
+    )
+    assert listed_invitation["delivery_status"] == "pending"
+    assert "token" not in listed_invitation
 
     accept_response = await api_client.post(
         f"/api/v1/workspaces/invitations/{invitation_response.json()['token']}/accept",
