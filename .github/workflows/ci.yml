@@ -45,8 +45,8 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-only-secret-that-is-never-used-in-production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -66,8 +66,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - run: npm install
@@ -115,8 +115,8 @@ jobs:
       CORS_ORIGINS: http://127.0.0.1:3000
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
           cache: pip
@@ -138,7 +138,7 @@ jobs:
           done
           cat /tmp/taskpilot-api.log
           exit 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install web dependencies
@@ -150,7 +150,7 @@ jobs:
       - name: Run browser E2E
         working-directory: web
         run: npm run e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: taskpilot-playwright-report
@@ -166,7 +166,7 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -180,7 +180,7 @@ jobs:
       - run: flutter test
       - run: flutter build apk --release --dart-define=API_URL=https://api.example.com
       - run: flutter build appbundle --release --dart-define=API_URL=https://api.example.com
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: taskpilot-android
           path: |
@@ -196,7 +196,7 @@ jobs:
       run:
         working-directory: mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -210,7 +210,7 @@ jobs:
       - run: flutter test
       - name: Build unsigned iOS release
         run: flutter build ios --release --no-codesign --dart-define=API_URL=https://api.example.com
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: taskpilot-ios-unsigned
           path: mobile/build/ios/iphoneos/Runner.app
@@ -220,7 +220,7 @@ jobs:
     name: Production Docker build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate production Compose
         env:
           POSTGRES_PASSWORD: ci-postgres-password
