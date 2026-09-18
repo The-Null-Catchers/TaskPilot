@@ -67,6 +67,40 @@ test.describe.serial('multi-user collaboration', () => {
     )
     await expectStatus(acceptB, 200)
 
+    const mobileLogin = await request.post(`${API}/auth/login`, {
+      data: {
+        email: b.user.email,
+        password: PASSWORD,
+        client: 'mobile',
+        device_name: 'Playwright session device',
+      },
+    })
+    await expectStatus(mobileLogin, 200)
+    const mobileAuth = await mobileLogin.json()
+    expect(mobileAuth.refresh_token).toBeTruthy()
+
+    const sessionsResponse = await request.get(`${API}/auth/sessions`, {
+      headers: authHeaders(b),
+    })
+    expect(sessionsResponse.status(), await sessionsResponse.text()).toBe(200)
+    const sessions = await sessionsResponse.json()
+    const mobileSession = sessions.find(
+      (item: { device_name?: string; active: boolean }) =>
+        item.device_name === 'Playwright session device' && item.active,
+    )
+    expect(mobileSession).toBeTruthy()
+
+    await expectStatus(
+      await request.delete(`${API}/auth/sessions/${mobileSession.id}`, {
+        headers: authHeaders(b),
+      }),
+      204,
+    )
+    const revokedRefresh = await request.post(`${API}/auth/refresh`, {
+      data: { refresh_token: mobileAuth.refresh_token, client: 'mobile' },
+    })
+    expect(revokedRefresh.status(), await revokedRefresh.text()).toBe(401)
+
     const memberCannotRename = await request.patch(`${API}/workspaces/${workspace.id}`, {
       headers: authHeaders(b),
       data: { name: 'Member should not rename' },
@@ -276,6 +310,75 @@ test.describe.serial('multi-user collaboration', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'My high-priority work', project_id: project.id }),
       ]),
+    )
+
+    const apiTokenResponse = await request.post(`${API}/integrations/tokens`, {
+      headers: authHeaders(a),
+      data: { name: 'Playwright read-only token', scopes: ['read'] },
+    })
+    await expectStatus(apiTokenResponse, 201)
+    const apiToken = await apiTokenResponse.json()
+    expect(apiToken.token).toBeTruthy()
+
+    const tokenHeaders = { Authorization: `Bearer ${apiToken.token}` }
+    const tokenRead = await request.get(`${API}/workspaces`, { headers: tokenHeaders })
+    expect(tokenRead.status(), await tokenRead.text()).toBe(200)
+    const tokenWrite = await request.post(`${API}/workspaces`, {
+      headers: tokenHeaders,
+      data: { name: 'Read-only token must not create this' },
+    })
+    expect(tokenWrite.status(), await tokenWrite.text()).toBe(403)
+
+    await expectStatus(
+      await request.delete(`${API}/integrations/tokens/${apiToken.id}`, {
+        headers: authHeaders(a),
+      }),
+      204,
+    )
+    const revokedTokenRead = await request.get(`${API}/workspaces`, { headers: tokenHeaders })
+    expect(revokedTokenRead.status(), await revokedTokenRead.text()).toBe(401)
+
+    const webhookResponse = await request.post(`${API}/workspaces/${workspace.id}/webhooks`, {
+      headers: authHeaders(a),
+      data: {
+        name: 'Playwright webhook',
+        url: 'https://example.com/taskpilot-e2e',
+        events: ['task.updated'],
+      },
+    })
+    await expectStatus(webhookResponse, 201)
+    const webhook = await webhookResponse.json()
+    expect(webhook.secret).toBeTruthy()
+
+    const memberWebhook = await request.post(`${API}/workspaces/${workspace.id}/webhooks`, {
+      headers: authHeaders(b),
+      data: {
+        name: 'Forbidden member webhook',
+        url: 'https://example.com/taskpilot-member-e2e',
+        events: ['*'],
+      },
+    })
+    expect(memberWebhook.status(), await memberWebhook.text()).toBe(403)
+
+    const rotatedWebhookSecret = await request.post(
+      `${API}/workspaces/${workspace.id}/webhooks/${webhook.id}/rotate-secret`,
+      { headers: authHeaders(a) },
+    )
+    await expectStatus(rotatedWebhookSecret, 200)
+    expect((await rotatedWebhookSecret.json()).secret).toBeTruthy()
+
+    await expectStatus(
+      await request.patch(`${API}/workspaces/${workspace.id}/webhooks/${webhook.id}`, {
+        headers: authHeaders(a),
+        data: { active: false, name: 'Playwright webhook disabled' },
+      }),
+      200,
+    )
+    await expectStatus(
+      await request.delete(`${API}/workspaces/${workspace.id}/webhooks/${webhook.id}`, {
+        headers: authHeaders(a),
+      }),
+      204,
     )
 
     const inviteGuestResponse = await request.post(
