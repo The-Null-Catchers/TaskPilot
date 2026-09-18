@@ -79,7 +79,7 @@ Back up at least:
 
 Redis is configured with append-only persistence in the production Compose stack, but it should not be treated as the source of truth for application data.
 
-Test database and object-storage restores periodically. A backup that has never been restored is not a verified backup.
+Test database and object-storage restores periodically. A backup that has never been restored is not a verified backup. The exact backup, restore-drill, data-restore, and rollback procedures are in [BACKUP_RESTORE_ROLLBACK.md](BACKUP_RESTORE_ROLLBACK.md).
 
 ## 7. Updating
 
@@ -125,6 +125,8 @@ Operational implications:
 - `APP_URL` must be the public web origin so emailed invitation links resolve correctly
 - SMTP failures can be inspected through invitation delivery state without exposing raw invitation tokens in logs
 - the creation response still returns the one-time secure invitation link so administrators are not blocked by a temporary SMTP outage
+
+For the complete release gate and post-deploy smoke sequence, use [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
 ## 12. Production checklist
 
