@@ -1,0 +1,268 @@
+name: TaskPilot Android signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: Public HTTPS TaskPilot API URL baked into the Flutter build
+        required: true
+        default: https://api.example.com
+        type: string
+      application_id:
+        description: Production Android application ID
+        required: true
+        default: dev.taskpilot.app
+        type: string
+      version_name:
+        description: Android/Flutter version name
+        required: true
+        default: 0.1.0
+        type: string
+      version_code:
+        description: Android version code (must increase for Play uploads)
+        required: true
+        default: "1"
+        type: string
+      upload_play:
+        description: Upload the signed AAB to Google Play internal testing
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  signed-android:
+    name: Build signed APK and AAB
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64 }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate release inputs and signing secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${{ inputs.api_url }}" =~ ^https:// ]]; then
+            echo "::error::api_url must use HTTPS for a production release"
+            exit 1
+          fi
+          if [[ ! "${{ inputs.application_id }}" =~ ^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$ ]]; then
+            echo "::error::application_id is not a valid Android application ID"
+            exit 1
+          fi
+          if [[ ! "${{ inputs.version_code }}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::version_code must be a positive integer"
+            exit 1
+          fi
+
+          required=(
+            ANDROID_KEYSTORE_BASE64
+            ANDROID_KEYSTORE_PASSWORD
+            ANDROID_KEY_ALIAS
+            ANDROID_KEY_PASSWORD
+          )
+          missing=0
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret: $name"
+              missing=1
+            fi
+          done
+          if [[ "${{ inputs.upload_play }}" == "true" && -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64:-}" ]]; then
+            echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64 for Play upload"
+            missing=1
+          fi
+          exit "$missing"
+
+      - name: Generate Android host project
+        run: |
+          set -euo pipefail
+          rm -rf android
+          flutter create /tmp/taskpilot_android_release \
+            --platforms=android \
+            --project-name=taskpilot_mobile \
+            --org=dev.taskpilot
+          cp -R /tmp/taskpilot_android_release/android ./android
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Configure signing, application ID, and optional Firebase client
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$PWD/android/app/taskpilot-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=$KEYSTORE_PATH
+          EOF
+          chmod 600 android/key.properties
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          app = Path("android/app/build.gradle.kts")
+          text = app.read_text()
+          text = re.sub(
+              r'applicationId\s*=\s*"[^"]+"',
+              'applicationId = "${{ inputs.application_id }}"',
+              text,
+              count=1,
+          )
+
+          imports = '''import java.io.FileInputStream
+          import java.util.Properties
+
+          '''
+          if "java.util.Properties" not in text:
+              text = imports + text
+
+          properties = '''val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+
+          '''
+          android_index = text.find("android {")
+          if "val keystoreProperties = Properties()" not in text and android_index >= 0:
+              text = text[:android_index] + properties + text[android_index:]
+
+          signing = '''    signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+
+          '''
+          if 'create("release")' not in text:
+              text = text.replace("    buildTypes {", signing + "    buildTypes {", 1)
+
+          text = text.replace(
+              'signingConfig = signingConfigs.getByName("debug")',
+              'signingConfig = signingConfigs.getByName("release")',
+          )
+          app.write_text(text)
+          PY
+
+          if [[ -n "${ANDROID_GOOGLE_SERVICES_JSON_BASE64:-}" ]]; then
+            printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+            chmod 600 android/app/google-services.json
+
+            python3 - <<'PY'
+          from pathlib import Path
+
+          settings = Path("android/settings.gradle.kts")
+          text = settings.read_text()
+          marker = 'id("com.google.gms.google-services") version "4.4.2" apply false'
+          if marker not in text:
+              text = text.replace(
+                  'plugins {',
+                  'plugins {\n    ' + marker,
+                  1,
+              )
+          settings.write_text(text)
+
+          app = Path("android/app/build.gradle.kts")
+          text = app.read_text()
+          plugin = '    id("com.google.gms.google-services")\n'
+          if 'id("com.google.gms.google-services")' not in text:
+              text = text.replace(
+                  'plugins {\n',
+                  'plugins {\n' + plugin,
+                  1,
+              )
+          app.write_text(text)
+          PY
+          fi
+
+      - name: Analyze and test
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build production-signed APK
+        run: >
+          flutter build apk
+          --release
+          --build-name=${{ inputs.version_name }}
+          --build-number=${{ inputs.version_code }}
+          --dart-define=API_URL=${{ inputs.api_url }}
+
+      - name: Build production-signed AAB
+        run: >
+          flutter build appbundle
+          --release
+          --build-name=${{ inputs.version_name }}
+          --build-number=${{ inputs.version_code }}
+          --dart-define=API_URL=${{ inputs.api_url }}
+
+      - name: Verify APK and AAB signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n1)"
+          "$APKSIGNER" verify --verbose build/app/outputs/flutter-apk/app-release.apk
+          jarsigner -verify -strict -certs build/app/outputs/bundle/release/app-release.aab >/dev/null
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: taskpilot-android-production-signed
+          path: |
+            mobile/build/app/outputs/flutter-apk/app-release.apk
+            mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload AAB to Google Play internal track
+        if: ${{ inputs.upload_play }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAY_JSON="$RUNNER_TEMP/google-play-service-account.json"
+          printf '%s' "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64" | base64 --decode > "$PLAY_JSON"
+          chmod 600 "$PLAY_JSON"
+          gem install fastlane --no-document
+          fastlane supply \
+            --aab build/app/outputs/bundle/release/app-release.aab \
+            --package_name "${{ inputs.application_id }}" \
+            --track internal \
+            --json_key "$PLAY_JSON" \
+            --skip_upload_metadata true \
+            --skip_upload_images true \
+            --skip_upload_screenshots true
+
+      - name: Cleanup release credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f android/key.properties
+          rm -f android/app/taskpilot-release.jks
+          rm -f android/app/google-services.json
+          rm -f "$RUNNER_TEMP/google-play-service-account.json"
