@@ -80,6 +80,7 @@ class TaskDetailState {
     this.watching = false,
     this.watcherCount = 0,
     this.blocked = false,
+    this.currentUserId,
     this.error,
   });
   final bool loading;
@@ -99,6 +100,7 @@ class TaskDetailState {
   final bool watching;
   final int watcherCount;
   final bool blocked;
+  final String? currentUserId;
   final String? error;
 }
 
@@ -128,6 +130,7 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         watching: state.watching,
         watcherCount: state.watcherCount,
         blocked: state.blocked,
+        currentUserId: state.currentUserId,
         error: state.error,
       );
 
@@ -145,12 +148,14 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         api.dio.get('/api/v1/workspaces/${task.workspaceId}/members'),
         api.dio.get('/api/v1/tasks/$taskId/subtasks'),
         api.dio.get('/api/v1/tasks/$taskId/checklists'),
+        api.dio.get('/api/v1/auth/me'),
       ]);
       final comments = (responses[0].data as List).map((item) => CommentItem.fromJson((item as Map).cast<String, dynamic>())).toList();
       final assignees = (responses[1].data as List).map((item) => PersonItem.fromJson((item as Map).cast<String, dynamic>())).toList();
       final members = (responses[2].data as List).map((item) => PersonItem.fromJson((item as Map).cast<String, dynamic>())).toList();
       final subtasks = (responses[3].data as List).map((item) => SubtaskItem.fromJson((item as Map).cast<String, dynamic>())).toList();
       final rawChecklists = (responses[4].data as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
+      final me = (responses[5].data as Map).cast<String, dynamic>();
       final checklists = <ChecklistGroup>[];
       for (final checklist in rawChecklists) {
         final id = checklist['id'] as String;
@@ -200,6 +205,7 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         watching: watching,
         watcherCount: watcherCount,
         blocked: blocked,
+        currentUserId: me['id'] as String?,
       );
     } catch (_) {
       final cached = prefs.getString(cacheKey);
@@ -228,9 +234,19 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
   }
 
   Future<MutationOutcome> addComment(String body) async {
-    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/comments', data: {'body': body}, label: 'Comment on ${state.task?.identifier ?? 'task'}');
+    final outcome = await queue.mutate(method: 'POST', path: '/api/v1/tasks/$taskId/comments/rich', data: {'body': body}, label: 'Comment on ${state.task?.identifier ?? 'task'}');
     if (outcome == MutationOutcome.synced) await load(quiet: true);
     return outcome;
+  }
+
+  Future<void> editComment(String commentId, String body) async {
+    await api.dio.patch('/api/v1/tasks/$taskId/comments/$commentId', data: {'body': body});
+    await load(quiet: true);
+  }
+
+  Future<void> deleteComment(String commentId) async {
+    await api.dio.delete('/api/v1/tasks/$taskId/comments/$commentId');
+    await load(quiet: true);
   }
 
   Future<MutationOutcome> assign(String userId) async {

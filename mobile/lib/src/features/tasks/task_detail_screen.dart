@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/offline_queue.dart';
+import 'comment_card.dart';
 import 'task_detail_controller.dart';
 import 'task_models.dart';
 
@@ -148,6 +149,64 @@ class TaskDetailScreen extends ConsumerWidget {
     return null;
   }
 
+  Future<void> _composeComment(BuildContext context, WidgetRef ref, TaskDetailState state) async {
+    final controller = TextEditingController();
+    var mentionId = '';
+    final body = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Comment'),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (state.members.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: mentionId,
+                    decoration: const InputDecoration(labelText: 'Mention teammate'),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('No mention')),
+                      ...state.members.map((member) => DropdownMenuItem(value: member.id, child: Text(member.name))),
+                    ],
+                    onChanged: (value) {
+                      final id = value ?? '';
+                      setDialogState(() => mentionId = id);
+                      if (id.isNotEmpty) {
+                        final marker = '@[$id]';
+                        if (!controller.text.contains(marker)) {
+                          final prefix = controller.text.isEmpty || controller.text.endsWith(' ') ? '' : ' ';
+                          controller.text = '${controller.text}$prefix$marker ';
+                          controller.selection = TextSelection.collapsed(offset: controller.text.length);
+                        }
+                      }
+                    },
+                  ),
+                if (state.members.isNotEmpty) const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  maxLength: 20000,
+                  minLines: 3,
+                  maxLines: 8,
+                  decoration: const InputDecoration(labelText: 'Write a comment…'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Comment')),
+          ],
+        ),
+      ),
+    );
+    if (body == null || body.isEmpty) return;
+    final outcome = await ref.read(taskDetailProvider(taskId).notifier).addComment(body);
+    if (context.mounted) _showOutcome(context, outcome);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(taskDetailProvider(taskId));
@@ -279,9 +338,39 @@ class TaskDetailScreen extends ConsumerWidget {
                         ),
                       ),
                       const SizedBox(height: 28),
-                      _SectionHeader(title: 'Discussion', icon: Icons.chat_bubble_outline_rounded, action: IconButton(onPressed: () async { final body = await _askText(context, title: 'Comment', label: 'Write a comment…', maxLength: 20000); if (body != null && body.isNotEmpty) { final outcome = await ref.read(taskDetailProvider(taskId).notifier).addComment(body); if (context.mounted) _showOutcome(context, outcome); } }, icon: const Icon(Icons.add_comment_rounded))),
+                      _SectionHeader(
+                        title: 'Discussion',
+                        icon: Icons.chat_bubble_outline_rounded,
+                        action: IconButton(
+                          onPressed: () => _composeComment(context, ref, state),
+                          icon: const Icon(Icons.add_comment_rounded),
+                          tooltip: 'Add comment',
+                        ),
+                      ),
                       const SizedBox(height: 8),
-                      if (state.comments.isEmpty) const Text('No cached comments. New comments can still be queued offline.') else ...state.comments.map((comment) => Card(elevation: 0, margin: const EdgeInsets.only(bottom: 10), child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(comment.body), const SizedBox(height: 8), Text(DateTime.parse(comment.createdAt).toLocal().toString().split('.').first, style: Theme.of(context).textTheme.labelSmall)])))),
+                      if (state.comments.isEmpty)
+                        const Text('No cached comments. New comments can still be queued offline.')
+                      else
+                        ...state.comments.map((comment) => CommentCard(
+                              taskId: taskId,
+                              comment: comment,
+                              members: state.members,
+                              currentUserId: state.currentUserId,
+                              onEdit: (body) async {
+                                try {
+                                  await ref.read(taskDetailProvider(taskId).notifier).editComment(comment.id, body);
+                                } catch (_) {
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not edit comment.')));
+                                }
+                              },
+                              onDelete: () async {
+                                try {
+                                  await ref.read(taskDetailProvider(taskId).notifier).deleteComment(comment.id);
+                                } catch (_) {
+                                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not delete comment.')));
+                                }
+                              },
+                            )),
                     ]),
                   ),
       ),
