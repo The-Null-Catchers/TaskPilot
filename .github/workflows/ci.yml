@@ -114,6 +114,12 @@ jobs:
       INTEGRATION_SECRET: e2e-integration-secret
       CORS_ORIGINS: http://127.0.0.1:3000
       NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+      STORAGE_ENDPOINT: http://127.0.0.1:9000
+      STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9000
+      STORAGE_BUCKET: taskpilot-e2e
+      STORAGE_KEY: taskpilot
+      STORAGE_SECRET: taskpilot-dev-password
+      STORAGE_REGION: us-east-1
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -123,6 +129,17 @@ jobs:
       - name: Install backend
         working-directory: backend
         run: pip install '.[dev]'
+      - name: Start MinIO object storage
+        run: |
+          docker run --rm -d             --name taskpilot-e2e-minio             -p 9000:9000             -e MINIO_ROOT_USER=taskpilot             -e MINIO_ROOT_PASSWORD=taskpilot-dev-password             quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in {1..40}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs taskpilot-e2e-minio
+          exit 1
       - name: Apply migrations
         working-directory: backend
         run: alembic upgrade head

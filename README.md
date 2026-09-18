@@ -289,13 +289,13 @@ Backend tests cover account lifecycle, authorization/isolation, collaboration, a
 5. Flutter analyze/tests plus unsigned iOS release build on macOS
 6. production Compose validation plus backend/web Docker image builds
 
-Android artifacts are uploaded as `taskpilot-android`; the unsigned iOS `Runner.app` is uploaded as `taskpilot-ios-unsigned`. Playwright reports/traces are uploaded on E2E runs for failure analysis.
+Android CI artifacts are uploaded as `taskpilot-android`; this is a credential-free contributor/test build and is not the production distribution path. Production-signed APK/AAB releases use the separate manual `TaskPilot Android signed release` workflow and artifact `taskpilot-android-production-signed`, with optional Google Play internal-track upload. The unsigned iOS `Runner.app` is uploaded as `taskpilot-ios-unsigned`. Playwright reports/traces are uploaded on E2E runs for failure analysis.
 
-To download the Android build from GitHub Actions, open the successful **TaskPilot CI** run for the target commit and download the `taskpilot-android` artifact. It contains both `app-release.apk` and `app-release.aab` produced by the gated Flutter release job.
+To download a contributor/test Android build, open the successful **TaskPilot CI** run for the target commit and download `taskpilot-android`. For a real distribution build, use **TaskPilot Android signed release** instead; setup and artifact distinctions are documented in [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md).
 
 The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot currently pins Next.js 16.3.5 so the high-severity PostCSS advisory previously reported through Next's bundled dependency is not accepted by CI.
 
-Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, or signing password belongs in the repository. The unsigned iOS contributor gate stays in `ci.yml`; production archive/IPA/TestFlight automation is documented in [docs/IOS_RELEASE.md](docs/IOS_RELEASE.md).
+Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, Firebase client credential, service-account key, or signing password belongs in the repository. Android production signing/Play internal upload is documented in [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md). The unsigned iOS contributor gate stays in `ci.yml`; production archive/IPA/TestFlight automation is documented in [docs/IOS_RELEASE.md](docs/IOS_RELEASE.md).
 
 ## Production deployment
 
@@ -314,7 +314,7 @@ The production stack provides:
 
 Use a TLS-terminating reverse proxy or managed load balancer in front of web/API/object storage. PostgreSQL and Redis should not be internet-accessible.
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Backup/restore and rollback procedures are in [docs/BACKUP_RESTORE_ROLLBACK.md](docs/BACKUP_RESTORE_ROLLBACK.md), and the production gate is captured in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md). Production logging, metrics, worker visibility, alerting, and vendor-neutral Sentry/OpenTelemetry/Prometheus integration guidance are in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Backup/restore and rollback procedures are in [docs/BACKUP_RESTORE_ROLLBACK.md](docs/BACKUP_RESTORE_ROLLBACK.md), the production gate is captured in [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md), and the reusable remote Playwright smoke runbook is in [docs/DEPLOYMENT_SMOKE.md](docs/DEPLOYMENT_SMOKE.md). Production logging, metrics, worker visibility, alerting, and vendor-neutral Sentry/OpenTelemetry/Prometheus integration guidance are in [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## Security posture
 
@@ -346,7 +346,7 @@ The canonical implementation is now on `main`; repository cleanup, multi-user E2
 What remains is deployment-specific or genuinely external validation rather than missing core product code:
 
 - inject production Firebase/APNs client/provider credentials and validate foreground/background/terminated push behavior on real Android/iOS devices
-- add object storage to the browser E2E environment before promoting attachment upload/download into Playwright; attachment IDOR and signed-download authorization are already covered in backend regressions
+- validate the new MinIO-backed Playwright attachment flow on CI/main and keep the backend attachment IDOR/signed-download regressions as defense-in-depth
 - connect the provider-neutral logging/metrics/error-reporting hooks to the chosen production collectors and configure uptime, readiness, 5xx, p95 latency, PostgreSQL/Redis, Celery, webhook/notification exhaustion, and realtime alerts
 - capture polished screenshots from a real seeded deployment and publish a hosted demo when infrastructure is available
 - make the final licensing decision before external distribution
