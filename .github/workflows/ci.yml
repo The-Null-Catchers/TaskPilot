@@ -131,7 +131,7 @@ jobs:
         run: pip install '.[dev]'
       - name: Start MinIO object storage
         run: |
-          docker run --rm -d             --name taskpilot-e2e-minio             -p 9000:9000             -e MINIO_ROOT_USER=taskpilot             -e MINIO_ROOT_PASSWORD=taskpilot-dev-password             minio/minio:latest server /data
+          docker run --rm -d             --name taskpilot-e2e-minio             -p 9000:9000             -e MINIO_ROOT_USER=taskpilot             -e MINIO_ROOT_PASSWORD=taskpilot-dev-password             quay.io/minio/minio:RELEASE.2025-09-06T17-38-46Z server /data
           for attempt in {1..40}; do
             if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
               exit 0
