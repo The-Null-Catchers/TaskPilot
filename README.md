@@ -341,18 +341,28 @@ Implemented safeguards include:
 - audit logs that intentionally exclude credentials/tokens
 - production startup guards against unsafe default secrets
 
+## Release validation
+
+The current release candidate has passed the full repository CI on `main` and the guarded remote deployment smoke against the Render staging environment. The hosted smoke verified health/readiness, browser registration/onboarding, multi-user collaboration, realtime updates, optimistic conflicts, and the deployed S3-compatible attachment flow.
+
+See [docs/RELEASE_EVIDENCE.md](docs/RELEASE_EVIDENCE.md) for the exact commit, CI/smoke run links, artifact names, verified hosted behavior, and the external checks that are still intentionally unclaimed.
+
 ## Remaining work
 
-The canonical implementation is now on `main`; repository cleanup, multi-user E2E expansion, Flutter offline/auth-expiry regression coverage, signed iOS release automation, production observability primitives, security regressions, demo data, accessibility fixes, and release/rollback runbooks are already implemented.
+The canonical implementation is on `main`; repository cleanup, multi-user E2E expansion, Flutter offline/auth-expiry regression coverage, signed iOS release automation, production observability primitives, security regressions, demo data, accessibility fixes, release/rollback runbooks, and a guarded hosted deployment smoke are already implemented.
 
 What remains is deployment-specific or genuinely external validation rather than missing core product code:
 
-- inject production Firebase/APNs client/provider credentials and validate foreground/background/terminated push behavior on real Android/iOS devices
-- run the guarded remote deployment-smoke workflow against the actual hosted demo/staging environment once infrastructure is available
-- route the now-deployable Prometheus/Grafana/Loki/Alertmanager reference stack to the chosen real alert destinations and tune thresholds from observed production traffic
-- capture polished screenshots from a real seeded deployment and publish a hosted demo when infrastructure is available
+- rerun the guarded deployment smoke immediately before promotion so the hosted target is proven reachable for that release window
+- run the production-signed Android workflow with real signing/Firebase secrets, then validate installation, realtime, attachments, offline/reconnect, conflicts, and push on a physical Android device
+- validate Google Play internal testing if Play credentials are available
+- run signed iOS/TestFlight and real-iPhone/APNs validation when Apple credentials are available
+- verify the hosted Celery worker and exactly one Beat scheduler from the hosting control plane
+- route the deployable Prometheus/Grafana/Loki/Alertmanager stack to real alert destinations and confirm dashboards/alerts with live traffic
+- perform and record a safe staging/test backup-restore drill
+- capture polished screenshots from a currently reachable seeded deployment and publish the final public demo presentation
 - make the final licensing decision before external distribution
-- add OAuth/AI/automation integrations only if they are required after the production baseline remains stable
+- add OAuth/AI/automation integrations only if they become real requirements after the release baseline remains stable
 
 ## Portfolio intent
 
