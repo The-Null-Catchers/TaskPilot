@@ -1,10 +1,6 @@
 name: TaskPilot Android signed release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/android-release.yml
   workflow_dispatch:
     inputs:
       api_url:
@@ -63,15 +59,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${{ inputs.api_url || 'https://taskpilot-api-test.onrender.com' }}" =~ ^https:// ]]; then
+          if [[ ! "${{ inputs.api_url }}" =~ ^https:// ]]; then
             echo "::error::api_url must use HTTPS for a production release"
             exit 1
           fi
-          if [[ ! "${{ inputs.application_id || 'dev.taskpilot.app' }}" =~ ^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$ ]]; then
+          if [[ ! "${{ inputs.application_id }}" =~ ^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+$ ]]; then
             echo "::error::application_id is not a valid Android application ID"
             exit 1
           fi
-          if [[ ! "${{ inputs.version_code || '1' }}" =~ ^[1-9][0-9]*$ ]]; then
+          if [[ ! "${{ inputs.version_code }}" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::version_code must be a positive integer"
             exit 1
           fi
@@ -89,7 +85,7 @@ jobs:
               missing=1
             fi
           done
-          if [[ "${{ inputs.upload_play || false }}" == "true" && -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64:-}" ]]; then
+          if [[ "${{ inputs.upload_play }}" == "true" && -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64:-}" ]]; then
             echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON_BASE64 for Play upload"
             missing=1
           fi
@@ -132,7 +128,7 @@ jobs:
           text = app.read_text()
           text = re.sub(
               r'applicationId\s*=\s*"[^"]+"',
-              'applicationId = "${{ inputs.application_id || 'dev.taskpilot.app' }}"',
+              'applicationId = "${{ inputs.application_id }}"',
               text,
               count=1,
           )
@@ -215,17 +211,17 @@ jobs:
         run: >
           flutter build apk
           --release
-          --build-name=${{ inputs.version_name || '0.1.0' }}
-          --build-number=${{ inputs.version_code || '1' }}
-          --dart-define=API_URL=${{ inputs.api_url || 'https://taskpilot-api-test.onrender.com' }}
+          --build-name=${{ inputs.version_name }}
+          --build-number=${{ inputs.version_code }}
+          --dart-define=API_URL=${{ inputs.api_url }}
 
       - name: Build production-signed AAB
         run: >
           flutter build appbundle
           --release
-          --build-name=${{ inputs.version_name || '0.1.0' }}
-          --build-number=${{ inputs.version_code || '1' }}
-          --dart-define=API_URL=${{ inputs.api_url || 'https://taskpilot-api-test.onrender.com' }}
+          --build-name=${{ inputs.version_name }}
+          --build-number=${{ inputs.version_code }}
+          --dart-define=API_URL=${{ inputs.api_url }}
 
       - name: Verify APK and AAB signatures
         shell: bash
@@ -245,7 +241,7 @@ jobs:
           retention-days: 14
 
       - name: Upload AAB to Google Play internal track
-        if: ${{ inputs.upload_play || false }}
+        if: ${{ inputs.upload_play }}
         shell: bash
         run: |
           set -euo pipefail
@@ -255,7 +251,7 @@ jobs:
           gem install fastlane --no-document
           fastlane supply \
             --aab build/app/outputs/bundle/release/app-release.aab \
-            --package_name "${{ inputs.application_id || 'dev.taskpilot.app' }}" \
+            --package_name "${{ inputs.application_id }}" \
             --track internal \
             --json_key "$PLAY_JSON" \
             --skip_upload_metadata true \
