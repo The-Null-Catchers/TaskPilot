@@ -21,7 +21,6 @@ jobs:
           set -euo pipefail
 
           for branch in \
-            "build/render-test-apk" \
             "dependabot/github_actions/actions/checkout-7" \
             "dependabot/github_actions/actions/setup-node-7" \
             "dependabot/github_actions/actions/setup-python-7" \
