@@ -4,19 +4,19 @@ This document records evidence for the current TaskPilot release candidate witho
 
 ## Release candidate
 
-- Git commit: `5cfd228fc59de5987bbe5e70b6f16630e5d5d939`
+- Git commit: `2f5b0a98a7c979728f1986dd9e843b7aa78684ff`
 - Branch: `main`
 - Last validated hosted environment:
   - Web: https://taskpilot-web-test.onrender.com
   - API: https://taskpilot-api-test.onrender.com
-- Validation date: 2026-09-18 UTC
+- Validation date: 2026-09-21 UTC
 
 ## Repository and CI
 
-Required CI passed on the exact release commit:
+Required CI passed on the exact release commit after repository cleanup:
 
 - Workflow: **TaskPilot CI**
-- Run: https://github.com/The-Null-Catchers/TaskPilot/actions/runs/35389794789
+- Run: https://github.com/The-Null-Catchers/TaskPilot/actions/runs/35562095962
 - Result: success
 - Jobs passed:
   - backend lint, migrations, and tests
@@ -25,6 +25,13 @@ Required CI passed on the exact release commit:
   - Flutter analyze/tests plus Android release APK/AAB builds
   - Flutter analyze/tests plus unsigned iOS release build
   - production Docker/Compose validation and image builds
+
+Repository cleanup verified before this CI run:
+
+- `build/render-test-apk` contained only the temporary `.github/workflows/render-test-apk.yml` build workflow and no unique product code
+- the temporary branch was deleted on 2026-09-21 UTC
+- `main` is the only remaining repository branch
+- the cleanup workflow was restored to its original contents after the one-time deletion
 
 Artifacts retained by that run:
 
@@ -36,7 +43,7 @@ These artifacts are not substitutes for production signing or device/store valid
 
 ## Hosted deployment smoke
 
-The guarded hosted-environment smoke workflow passed on the same commit:
+The most recent guarded hosted-environment smoke workflow passed on the previous application-equivalent release candidate commit `5cfd228fc59de5987bbe5e70b6f16630e5d5d939`:
 
 - Workflow: **TaskPilot deployment smoke**
 - Run: https://github.com/The-Null-Catchers/TaskPilot/actions/runs/35390223028
@@ -53,7 +60,7 @@ The deployed Playwright smoke suite completed **3/3 tests** successfully. It cov
 - invitations, permissions, collaboration, notifications, realtime updates, optimistic conflicts, archive/restore, and saved views
 - real S3-compatible attachment upload/download flow, signed download authorization, unauthorized access denial, and deletion
 
-This proves the application paths exercised by the smoke suite against that hosted target at that point in time. It does not prove that every infrastructure process or third-party provider is currently healthy.
+This proves the application paths exercised by the smoke suite against that hosted target at that point in time. A fresh post-cleanup smoke run has not yet been recorded for `2f5b0a98a7c979728f1986dd9e843b7aa78684ff`; the cleanup commits did not change the final application/workflow tree other than commit history. It does not prove that every infrastructure process or third-party provider is currently healthy.
 
 ## Object storage
 
