@@ -77,6 +77,12 @@ async def test_multi_user_workspace_collaboration_and_conflict(api_client):
     )
     assert forbidden_board.status_code == 403
 
+    forbidden_activity = await api_client.get(
+        f"/api/v1/activity/projects/{project['id']}",
+        headers=_headers(member_token),
+    )
+    assert forbidden_activity.status_code == 403
+
     invitation_response = await api_client.post(
         f"/api/v1/workspaces/{workspace['id']}/invitations",
         headers=_headers(owner_token),
@@ -96,6 +102,12 @@ async def test_multi_user_workspace_collaboration_and_conflict(api_client):
         headers=_headers(member_token),
     )
     assert allowed_board.status_code == 200, allowed_board.text
+
+    allowed_activity = await api_client.get(
+        f"/api/v1/activity/projects/{project['id']}",
+        headers=_headers(member_token),
+    )
+    assert allowed_activity.status_code == 200, allowed_activity.text
 
     comment_response = await api_client.post(
         f"/api/v1/tasks/{task['id']}/comments",
