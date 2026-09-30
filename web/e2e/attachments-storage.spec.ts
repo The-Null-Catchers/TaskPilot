@@ -25,7 +25,7 @@ async function expectStatus(response: APIResponse, status: number) {
   return response
 }
 
-test('uses real MinIO for browser attachment upload and download', async ({ page, request }, testInfo) => {
+test('uses real S3-compatible HTTP storage for browser attachment upload and download', async ({ page, request }, testInfo) => {
   test.setTimeout(90_000)
   const run = process.env.GITHUB_RUN_ID
     ? `${process.env.GITHUB_RUN_ID}-${testInfo.retry}`
@@ -85,7 +85,7 @@ test('uses real MinIO for browser attachment upload and download', async ({ page
   await page.locator('input[type="file"]').setInputFiles({
     name: filename,
     mimeType: 'text/plain',
-    buffer: Buffer.from(`TaskPilot real MinIO E2E ${run}\n`),
+    buffer: Buffer.from(`TaskPilot S3-compatible E2E ${run}\n`),
   })
   await expect(page.getByText(filename, { exact: true })).toBeVisible({ timeout: 15_000 })
 
@@ -99,11 +99,16 @@ test('uses real MinIO for browser attachment upload and download', async ({ page
   )
   expect(attachment).toBeTruthy()
 
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: `Download ${filename}` }).click()
-  const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe(filename)
-  expect(await download.path()).toBeTruthy()
+  const signedResponse = await request.get(`${API}/attachments/${attachment.id}/download`, {
+    headers: authHeaders(owner),
+  })
+  await expectStatus(signedResponse, 200)
+  const signed = await signedResponse.json()
+  expect(signed.url).toContain('X-Amz-Signature=')
+
+  const objectResponse = await request.get(signed.url)
+  await expectStatus(objectResponse, 200)
+  expect(await objectResponse.text()).toBe(`TaskPilot S3-compatible E2E ${run}\n`)
 
   const denied = await request.get(`${API}/attachments/${attachment.id}/download`, {
     headers: authHeaders(outsider),
