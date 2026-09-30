@@ -126,28 +126,20 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install backend
+      - name: Install backend and S3 test server
         working-directory: backend
-        run: pip install '.[dev]'
-      - name: Start MinIO object storage
+        run: pip install '.[dev]' 'moto[server]==5.2.0'
+      - name: Start S3-compatible object storage
         run: |
           set -euo pipefail
-          MINIO_RELEASE=RELEASE.2025-10-15T17-29-55Z
-          curl --fail --location --retry 3 --retry-delay 2 \
-            "https://dl.min.io/server/minio/release/linux-amd64/archive/minio.${MINIO_RELEASE}" \
-            --output /tmp/minio
-          chmod +x /tmp/minio
-          mkdir -p /tmp/taskpilot-minio-data
-          MINIO_ROOT_USER=taskpilot \
-          MINIO_ROOT_PASSWORD=taskpilot-dev-password \
-            nohup /tmp/minio server /tmp/taskpilot-minio-data >/tmp/taskpilot-minio.log 2>&1 &
+          nohup moto_server -H 127.0.0.1 -p 9000 >/tmp/taskpilot-s3.log 2>&1 &
           for attempt in {1..40}; do
-            if curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null; then
+            if curl -fsS http://127.0.0.1:9000/ >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          cat /tmp/taskpilot-minio.log
+          cat /tmp/taskpilot-s3.log
           exit 1
       - name: Apply migrations
         working-directory: backend
