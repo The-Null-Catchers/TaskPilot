@@ -328,7 +328,7 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                                   children: [
                                     Text(_profile?['name'] as String? ?? account['name'] as String? ?? 'TaskPilot user', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                                     const SizedBox(height: 4),
-                                    if ((_profile?['username'] as String?)?.isNotEmpty == true) Text('@' + (_profile!['username'] as String), style: Theme.of(context).textTheme.bodyMedium),
+                                    if ((_profile?['username'] as String?)?.isNotEmpty == true) Text('@${_profile!['username'] as String}', style: Theme.of(context).textTheme.bodyMedium),
                                     if ((_profile?['job_title'] as String?)?.isNotEmpty == true) Text(_profile!['job_title'] as String, style: Theme.of(context).textTheme.bodySmall),
                                     Text(account['email'] as String? ?? '', style: Theme.of(context).textTheme.bodySmall),
                                   ],
