@@ -6,7 +6,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.account_models import AccountSecurity, SessionMetadata
+from app.account_models import AccountSecurity, SessionMetadata, UserProfile
 from app.api.deps import current_user
 from app.collaboration_models import AuditLog
 from app.core.config import settings
@@ -97,6 +97,7 @@ async def register(
     db.add(user)
     await db.flush()
     db.add(AccountSecurity(user_id=user.id))
+    db.add(UserProfile(user_id=user.id))
     slug = f"{email.split('@')[0].lower().replace('.', '-')}-{str(uuid4())[:6]}"
     workspace = Workspace(name=f"{data.name.strip()}'s Workspace", slug=slug, owner_id=user.id)
     db.add(workspace)
