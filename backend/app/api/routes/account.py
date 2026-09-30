@@ -529,6 +529,14 @@ async def delete_account(
     user.email = f"deleted-{uuid4().hex}@deleted.taskpilot.invalid"
     user.name = "Deleted user"
     user.password_hash = hash_password(new_refresh_token())
+    profile = await db.get(UserProfile, user.id)
+    if profile:
+        profile.username = None
+        profile.avatar_url = None
+        profile.job_title = None
+        profile.bio = ""
+        profile.timezone = "UTC"
+        profile.language = "en"
     await db.execute(
         update(Session)
         .where(Session.user_id == user.id, Session.revoked_at.is_(None))
