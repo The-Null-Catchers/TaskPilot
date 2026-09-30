@@ -99,11 +99,16 @@ test('uses real S3-compatible HTTP storage for browser attachment upload and dow
   )
   expect(attachment).toBeTruthy()
 
-  const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: `Download ${filename}` }).click()
-  const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe(filename)
-  expect(await download.path()).toBeTruthy()
+  const signedResponse = await request.get(`${API}/attachments/${attachment.id}/download`, {
+    headers: authHeaders(owner),
+  })
+  await expectStatus(signedResponse, 200)
+  const signed = await signedResponse.json()
+  expect(signed.url).toContain('X-Amz-Signature=')
+
+  const objectResponse = await request.get(signed.url)
+  await expectStatus(objectResponse, 200)
+  expect(await objectResponse.text()).toBe(`TaskPilot S3-compatible E2E ${run}\n`)
 
   const denied = await request.get(`${API}/attachments/${attachment.id}/download`, {
     headers: authHeaders(outsider),
