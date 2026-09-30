@@ -331,6 +331,10 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                                     if ((_profile?['username'] as String?)?.isNotEmpty == true) Text('@${_profile!['username'] as String}', style: Theme.of(context).textTheme.bodyMedium),
                                     if ((_profile?['job_title'] as String?)?.isNotEmpty == true) Text(_profile!['job_title'] as String, style: Theme.of(context).textTheme.bodySmall),
                                     Text(account['email'] as String? ?? '', style: Theme.of(context).textTheme.bodySmall),
+                                    if ((_profile?['bio'] as String?)?.isNotEmpty == true) ...[
+                                      const SizedBox(height: 6),
+                                      Text(_profile!['bio'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                                    ],
                                   ],
                                 ),
                               ),
