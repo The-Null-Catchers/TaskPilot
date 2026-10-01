@@ -385,9 +385,12 @@ async def reorder_columns(
         .values(position=BoardColumn.position + 10000)
     )
     await db.flush()
-    by_id = {column.id: column for column in columns}
     for position, column_id in enumerate(data.column_ids):
-        by_id[column_id].position = position
+        await db.execute(
+            update(BoardColumn)
+            .where(BoardColumn.id == column_id, BoardColumn.project_id == project.id)
+            .values(position=position)
+        )
     db.add(
         ActivityLog(
             workspace_id=project.workspace_id,
@@ -444,10 +447,7 @@ async def delete_column(
 
     task_count = int(
         await db.scalar(
-            select(func.count(Task.id)).where(
-                Task.column_id == column.id,
-                Task.deleted_at.is_(None),
-            )
+            select(func.count(Task.id)).where(Task.column_id == column.id)
         )
         or 0
     )
@@ -466,15 +466,25 @@ async def delete_column(
             raise HTTPException(status_code=422, detail="Destination column is invalid")
         await db.execute(
             update(Task)
-            .where(Task.column_id == column.id, Task.deleted_at.is_(None))
+            .where(Task.column_id == column.id)
             .values(column_id=destination.id, version=Task.version + 1)
         )
 
     await db.delete(column)
     await db.flush()
     remaining = [item for item in columns if item.id != column.id]
+    await db.execute(
+        update(BoardColumn)
+        .where(BoardColumn.project_id == project.id)
+        .values(position=BoardColumn.position + 10000)
+    )
+    await db.flush()
     for position, item in enumerate(remaining):
-        item.position = position
+        await db.execute(
+            update(BoardColumn)
+            .where(BoardColumn.id == item.id)
+            .values(position=position)
+        )
     db.add(
         ActivityLog(
             workspace_id=project.workspace_id,
