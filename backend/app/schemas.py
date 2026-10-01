@@ -96,6 +96,18 @@ class ProjectOut(ORMModel):
     created_at: datetime
 
 
+class ColumnCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ColumnPatch(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class ColumnReorder(BaseModel):
+    column_ids: list[UUID] = Field(min_length=1)
+
+
 class ColumnOut(ORMModel):
     id: UUID
     project_id: UUID
