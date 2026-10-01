@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user, require_project, require_workspace
@@ -11,7 +11,17 @@ from app.collaboration_schemas import ProjectMemberAdd, ProjectMemberOut
 from app.db import get_db
 from app.models import ActivityLog, BoardColumn, Project, Task, User, WorkspaceMember
 from app.realtime import publish
-from app.schemas import BoardOut, ColumnOut, ProjectCreate, ProjectOut, ProjectUpdate, TaskOut
+from app.schemas import (
+    BoardOut,
+    ColumnCreate,
+    ColumnOut,
+    ColumnPatch,
+    ColumnReorder,
+    ProjectCreate,
+    ProjectOut,
+    ProjectUpdate,
+    TaskOut,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 DEFAULT_COLUMNS = ["Backlog", "To Do", "In Progress", "Review", "Done"]
@@ -237,6 +247,256 @@ async def board(
         project=ProjectOut.model_validate(project),
         columns=[ColumnOut.model_validate(column) for column in columns],
         tasks=[TaskOut.model_validate(task) for task in tasks],
+    )
+
+
+@router.post("/{project_id}/columns", response_model=ColumnOut, status_code=201)
+async def create_column(
+    project_id: UUID,
+    data: ColumnCreate,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Restore the project before editing its board")
+
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Column name cannot be blank")
+    duplicate = await db.scalar(
+        select(BoardColumn.id).where(
+            BoardColumn.project_id == project.id,
+            func.lower(BoardColumn.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A column with this name already exists")
+    max_position = await db.scalar(
+        select(func.max(BoardColumn.position)).where(BoardColumn.project_id == project.id)
+    )
+    column = BoardColumn(
+        project_id=project.id,
+        name=name,
+        position=(max_position if max_position is not None else -1) + 1,
+    )
+    db.add(column)
+    db.add(
+        ActivityLog(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            task_id=None,
+            actor_id=user.id,
+            action="board.column.created",
+            summary=f"Created board column {name}",
+        )
+    )
+    await db.commit()
+    await db.refresh(column)
+    await publish(
+        project.workspace_id,
+        "board.column.created",
+        ColumnOut.model_validate(column).model_dump(mode="json"),
+    )
+    return column
+
+
+@router.patch("/{project_id}/columns/{column_id}", response_model=ColumnOut)
+async def rename_column(
+    project_id: UUID,
+    column_id: UUID,
+    data: ColumnPatch,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Restore the project before editing its board")
+    column = await db.get(BoardColumn, column_id)
+    if not column or column.project_id != project.id:
+        raise HTTPException(status_code=404, detail="Board column not found")
+
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Column name cannot be blank")
+    duplicate = await db.scalar(
+        select(BoardColumn.id).where(
+            BoardColumn.project_id == project.id,
+            BoardColumn.id != column.id,
+            func.lower(BoardColumn.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A column with this name already exists")
+    column.name = name
+    db.add(
+        ActivityLog(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            task_id=None,
+            actor_id=user.id,
+            action="board.column.renamed",
+            summary=f"Renamed a board column to {name}",
+        )
+    )
+    await db.commit()
+    await db.refresh(column)
+    await publish(
+        project.workspace_id,
+        "board.column.updated",
+        ColumnOut.model_validate(column).model_dump(mode="json"),
+    )
+    return column
+
+
+@router.put("/{project_id}/columns/reorder", response_model=list[ColumnOut])
+async def reorder_columns(
+    project_id: UUID,
+    data: ColumnReorder,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Restore the project before editing its board")
+
+    columns = list(
+        (
+            await db.scalars(
+                select(BoardColumn)
+                .where(BoardColumn.project_id == project.id)
+                .order_by(BoardColumn.position)
+                .with_for_update()
+            )
+        ).all()
+    )
+    existing_ids = [column.id for column in columns]
+    if len(data.column_ids) != len(set(data.column_ids)):
+        raise HTTPException(status_code=422, detail="Column order contains duplicates")
+    if set(data.column_ids) != set(existing_ids):
+        raise HTTPException(status_code=422, detail="Column order must contain every project column exactly once")
+
+    await db.execute(
+        update(BoardColumn)
+        .where(BoardColumn.project_id == project.id)
+        .values(position=BoardColumn.position + 10000)
+    )
+    await db.flush()
+    by_id = {column.id: column for column in columns}
+    for position, column_id in enumerate(data.column_ids):
+        by_id[column_id].position = position
+    db.add(
+        ActivityLog(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            task_id=None,
+            actor_id=user.id,
+            action="board.columns.reordered",
+            summary="Reordered board columns",
+        )
+    )
+    await db.commit()
+    ordered = list(
+        (
+            await db.scalars(
+                select(BoardColumn)
+                .where(BoardColumn.project_id == project.id)
+                .order_by(BoardColumn.position)
+            )
+        ).all()
+    )
+    payload = [ColumnOut.model_validate(item).model_dump(mode="json") for item in ordered]
+    await publish(project.workspace_id, "board.columns.reordered", {"columns": payload})
+    return ordered
+
+
+@router.delete("/{project_id}/columns/{column_id}", status_code=204)
+async def delete_column(
+    project_id: UUID,
+    column_id: UUID,
+    move_to_column_id: UUID | None = None,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Restore the project before editing its board")
+
+    columns = list(
+        (
+            await db.scalars(
+                select(BoardColumn)
+                .where(BoardColumn.project_id == project.id)
+                .order_by(BoardColumn.position)
+                .with_for_update()
+            )
+        ).all()
+    )
+    if len(columns) <= 1:
+        raise HTTPException(status_code=409, detail="A board must keep at least one column")
+    column = next((item for item in columns if item.id == column_id), None)
+    if column is None:
+        raise HTTPException(status_code=404, detail="Board column not found")
+
+    task_count = int(
+        await db.scalar(
+            select(func.count(Task.id)).where(
+                Task.column_id == column.id,
+                Task.deleted_at.is_(None),
+            )
+        )
+        or 0
+    )
+    destination = None
+    if task_count:
+        if move_to_column_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Column contains tasks. Move them first or provide move_to_column_id.",
+            )
+        destination = next(
+            (item for item in columns if item.id == move_to_column_id and item.id != column.id),
+            None,
+        )
+        if destination is None:
+            raise HTTPException(status_code=422, detail="Destination column is invalid")
+        await db.execute(
+            update(Task)
+            .where(Task.column_id == column.id, Task.deleted_at.is_(None))
+            .values(column_id=destination.id, version=Task.version + 1)
+        )
+
+    await db.delete(column)
+    await db.flush()
+    remaining = [item for item in columns if item.id != column.id]
+    for position, item in enumerate(remaining):
+        item.position = position
+    db.add(
+        ActivityLog(
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            task_id=None,
+            actor_id=user.id,
+            action="board.column.deleted",
+            summary=(
+                f"Deleted board column {column.name}"
+                + (f" and moved {task_count} tasks to {destination.name}" if destination else "")
+            ),
+        )
+    )
+    await db.commit()
+    await publish(
+        project.workspace_id,
+        "board.column.deleted",
+        {
+            "project_id": str(project.id),
+            "column_id": str(column.id),
+            "move_to_column_id": str(destination.id) if destination else None,
+        },
     )
 
 
