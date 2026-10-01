@@ -377,7 +377,10 @@ async def reorder_columns(
     if len(data.column_ids) != len(set(data.column_ids)):
         raise HTTPException(status_code=422, detail="Column order contains duplicates")
     if set(data.column_ids) != set(existing_ids):
-        raise HTTPException(status_code=422, detail="Column order must contain every project column exactly once")
+        raise HTTPException(
+            status_code=422,
+            detail="Column order must contain every project column exactly once",
+        )
 
     await db.execute(
         update(BoardColumn)
