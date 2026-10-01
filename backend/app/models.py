@@ -80,10 +80,13 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(160))
     key: Mapped[str] = mapped_column(String(12))
     description: Mapped[str] = mapped_column(Text, default="")
+    icon: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    color: Mapped[str] = mapped_column(String(16), default="#6366f1")
     status: Mapped[str] = mapped_column(String(24), default="active", index=True)
     task_counter: Mapped[int] = mapped_column(Integer, default=0)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
