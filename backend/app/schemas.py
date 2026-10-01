@@ -59,6 +59,8 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     key: str = Field(min_length=2, max_length=12, pattern=r"^[A-Za-z][A-Za-z0-9]*$")
     description: str = Field(default="", max_length=10000)
+    icon: str | None = Field(default=None, max_length=32)
+    color: str = Field(default="#6366f1", pattern=r"^#[0-9A-Fa-f]{6}$")
     start_date: date | None = None
     due_date: date | None = None
 
@@ -68,6 +70,16 @@ class ProjectCreate(BaseModel):
         return value.upper()
 
 
+class ProjectUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=10000)
+    icon: str | None = Field(default=None, max_length=32)
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    start_date: date | None = None
+    due_date: date | None = None
+    status: Literal["planning", "active", "on_hold", "completed"] | None = None
+
+
 class ProjectOut(ORMModel):
     id: UUID
     workspace_id: UUID
@@ -75,8 +87,12 @@ class ProjectOut(ORMModel):
     name: str
     key: str
     description: str
+    icon: str | None
+    color: str
     status: str
+    start_date: date | None
     due_date: date | None
+    archived_at: datetime | None
     created_at: datetime
 
 
