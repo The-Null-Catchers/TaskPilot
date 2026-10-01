@@ -1,13 +1,13 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, CheckCircle2, Circle, Clock3, ExternalLink, Eye, ListChecks, Pencil, Plus, Tags, UserPlus, X } from 'lucide-react'
+import { Archive, ArrowDown, ArrowUp, CheckCircle2, Circle, Clock3, Copy, ExternalLink, Eye, ListChecks, Pencil, Plus, Tags, UserPlus, X } from 'lucide-react'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { CommentThread } from '@/components/comment-thread'
 import { SafeMarkdown } from '@/components/safe-markdown'
 import { TaskCollaborationPanel } from '@/components/task-collaboration-panel'
-import { Checklist, ChecklistItem, Label, request, Subtask, Task, TimeSummary, UserSummary, WorkspaceMember } from '@/lib/api'
+import { Checklist, ChecklistItem, DuplicateTaskResult, Label, request, Subtask, Task, TimeSummary, UserSummary, WorkspaceMember } from '@/lib/api'
 
 function formatDuration(seconds:number) {
   const hours=Math.floor(seconds/3600)
@@ -59,7 +59,7 @@ function ChecklistSection({taskId, checklist, token, members}:{taskId:string; ch
   return <section className="rounded-2xl border border-[var(--line)] p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="font-medium">{checklist.title}</h3><p className="mt-0.5 text-xs muted">{completed} / {total} complete</p></div><span className="text-xs font-medium muted">{percentage}%</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"><div className="h-full rounded-full bg-indigo-600 transition-all" style={{width:`${percentage}%`}} /></div><div className="mt-4 space-y-2">{ordered.map((item,index)=><div key={item.id} className="rounded-xl border border-[var(--line)] p-2"><div className="flex items-start gap-2"><button type="button" onClick={()=>void toggleItem(item)} className="mt-1 rounded-lg p-1" aria-label={item.completed?'Mark incomplete':'Mark complete'}>{item.completed?<CheckCircle2 size={18} className="text-indigo-600"/>:<Circle size={18} className="muted"/>}</button><div className="min-w-0 flex-1"><p className={`text-sm leading-5 ${item.completed?'line-through muted':''}`}>{item.title}</p><select value={item.assignee_id??''} onChange={e=>void assignItem(item,e.target.value)} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-[var(--panel)] px-2 py-1.5 text-xs"><option value="">Unassigned</option>{members.map(member=><option key={member.user_id} value={member.user_id}>{member.name}</option>)}</select></div><div className="flex shrink-0 flex-col"><button type="button" disabled={index===0} onClick={()=>void moveItem(item,-1)} className="rounded-lg p-1.5 disabled:opacity-25" aria-label="Move item up"><ArrowUp size={14}/></button><button type="button" disabled={index===ordered.length-1} onClick={()=>void moveItem(item,1)} className="rounded-lg p-1.5 disabled:opacity-25" aria-label="Move item down"><ArrowDown size={14}/></button></div></div></div>)}{items.isLoading&&<p className="px-2 text-sm muted">Loading checklist…</p>}</div><form onSubmit={addItem} className="mt-3 flex gap-2"><input name="title" required maxLength={240} placeholder="Add checklist item" className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-transparent px-3 py-2 text-sm outline-none focus:border-indigo-500"/><button className="rounded-xl border border-[var(--line)] px-3 py-2" aria-label="Add checklist item"><Plus size={16}/></button></form></section>
 }
 
-export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:string;onClose:()=>void;onUpdated:(task:Task)=>void}) {
+export function TaskDrawer({task,token,onClose,onUpdated,onArchived,onDuplicated}:{task:Task;token:string;onClose:()=>void;onUpdated:(task:Task)=>void;onArchived?:(taskId:string)=>void;onDuplicated?:(task:Task)=>void}) {
   const [title,setTitle]=useState(task.title)
   const [description,setDescription]=useState(task.description)
   const [priority,setPriority]=useState(task.priority)
@@ -71,6 +71,7 @@ export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:strin
   const [assigneeToAdd,setAssigneeToAdd]=useState('')
   const [labelToAdd,setLabelToAdd]=useState('')
   const [newLabelName,setNewLabelName]=useState('')
+  const [quickAction,setQuickAction]=useState<'copy'|'duplicate'|'archive'|''>('')
 
   const subtasks=useQuery({queryKey:['subtasks',task.id],queryFn:()=>request<Subtask[]>(`/api/v1/tasks/${task.id}/subtasks`,{},token)})
   const workspaceLabels=useQuery({queryKey:['workspace-labels',task.workspace_id],queryFn:()=>request<Label[]>(`/api/v1/workspaces/${task.workspace_id}/labels`,{},token)})
@@ -117,8 +118,31 @@ export function TaskDrawer({task,token,onClose,onUpdated}:{task:Task;token:strin
   async function removeLabel(labelId:string) {await request<void>(`/api/v1/tasks/${task.id}/labels/${labelId}`,{method:'DELETE'},token);await taskLabels.refetch()}
   async function createLabel(e:FormEvent<HTMLFormElement>) {e.preventDefault();const name=newLabelName.trim();if(!name)return;const created=await request<Label>(`/api/v1/workspaces/${task.workspace_id}/labels`,{method:'POST',body:JSON.stringify({name,color:'#64748b'})},token);setNewLabelName('');await workspaceLabels.refetch();await request<Label>(`/api/v1/tasks/${task.id}/labels`,{method:'POST',body:JSON.stringify({label_id:created.id})},token);await taskLabels.refetch()}
   async function convertSubtask(subtaskId:string) {await request<Task>(`/api/v1/tasks/${task.id}/subtasks/${subtaskId}/convert`,{method:'POST',body:JSON.stringify({})},token);await subtasks.refetch()}
+  async function copyLink() {
+    setQuickAction('copy');setError('')
+    try {
+      const url=`${window.location.origin}/app/tasks/${task.id}`
+      await navigator.clipboard.writeText(url)
+    } catch(e) { setError(e instanceof Error?e.message:'Could not copy task link') } finally { setQuickAction('') }
+  }
+  async function duplicateTask() {
+    setQuickAction('duplicate');setError('')
+    try {
+      const result=await request<DuplicateTaskResult>(`/api/v1/tasks/${task.id}/duplicate`,{method:'POST',body:JSON.stringify({})},token)
+      onDuplicated?.(result.task)
+    } catch(e) { setError(e instanceof Error?e.message:'Could not duplicate task') } finally { setQuickAction('') }
+  }
+  async function archiveTask() {
+    if(!confirm(`Archive ${task.identifier}? You can restore it later from Archived tasks.`))return
+    setQuickAction('archive');setError('')
+    try {
+      await request<Task>(`/api/v1/tasks/${task.id}/archive`,{method:'POST'},token)
+      onArchived?.(task.id)
+      onClose()
+    } catch(e) { setError(e instanceof Error?e.message:'Could not archive task') } finally { setQuickAction('') }
+  }
 
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onMouseDown={onClose}><aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--line)] bg-[var(--panel)] p-5 sm:p-7" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between gap-4"><div className="min-w-0 flex-1"><p className="text-sm font-medium muted">{task.identifier}</p><input value={title} onChange={e=>setTitle(e.target.value)} className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-tight outline-none" aria-label="Task title"/></div><button onClick={onClose} className="rounded-xl border border-[var(--line)] p-2" aria-label="Close task"><X size={18}/></button></div>
+  return <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onMouseDown={onClose}><aside className="h-full w-full max-w-2xl overflow-y-auto border-l border-[var(--line)] bg-[var(--panel)] p-5 sm:p-7" onMouseDown={e=>e.stopPropagation()}><div className="flex items-start justify-between gap-4"><div className="min-w-0 flex-1"><p className="text-sm font-medium muted">{task.identifier}</p><input value={title} onChange={e=>setTitle(e.target.value)} className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-tight outline-none" aria-label="Task title"/></div><button onClick={onClose} className="rounded-xl border border-[var(--line)] p-2" aria-label="Close task"><X size={18}/></button></div><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={()=>void copyLink()} disabled={!!quickAction} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium disabled:opacity-50"><Copy size={14}/>Copy link</button><button type="button" onClick={()=>void duplicateTask()} disabled={!!quickAction} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium disabled:opacity-50"><Copy size={14}/>{quickAction==='duplicate'?'Duplicating…':'Duplicate'}</button><button type="button" onClick={()=>void archiveTask()} disabled={!!quickAction} className="inline-flex items-center gap-2 rounded-xl border border-amber-500/30 px-3 py-2 text-xs font-medium text-amber-700 disabled:opacity-50 dark:text-amber-300"><Archive size={14}/>{quickAction==='archive'?'Archiving…':'Archive'}</button></div>
 
     <div className="mt-6 grid gap-4 sm:grid-cols-3"><label className="text-sm font-medium">Priority<select value={priority} onChange={e=>setPriority(e.target.value as Task['priority'])} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5">{['urgent','high','medium','low','none'].map(p=><option key={p} value={p}>{p[0].toUpperCase()+p.slice(1)}</option>)}</select></label><label className="text-sm font-medium">Status<select value={status} onChange={e=>setStatus(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value="open">Open</option><option value="in_progress">In progress</option><option value="review">Review</option><option value="done">Done</option></select></label><label className="text-sm font-medium">Due date<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"/></label></div>
 
