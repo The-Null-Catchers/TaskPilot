@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,8 +9,9 @@ from app.api.deps import current_user, require_project, require_workspace
 from app.collaboration_models import ProjectMember
 from app.collaboration_schemas import ProjectMemberAdd, ProjectMemberOut
 from app.db import get_db
-from app.models import BoardColumn, Project, Task, User, WorkspaceMember
-from app.schemas import BoardOut, ColumnOut, ProjectCreate, ProjectOut, TaskOut
+from app.models import ActivityLog, BoardColumn, Project, Task, User, WorkspaceMember
+from app.realtime import publish
+from app.schemas import BoardOut, ColumnOut, ProjectCreate, ProjectOut, ProjectUpdate, TaskOut
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 DEFAULT_COLUMNS = ["Backlog", "To Do", "In Progress", "Review", "Done"]
@@ -22,7 +24,10 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
 ):
     role = await require_workspace(db, workspace_id, user.id)
-    query = select(Project).where(Project.workspace_id == workspace_id)
+    query = select(Project).where(
+        Project.workspace_id == workspace_id,
+        Project.archived_at.is_(None),
+    )
     if role == "guest":
         query = query.join(ProjectMember, ProjectMember.project_id == Project.id).where(
             ProjectMember.user_id == user.id
@@ -55,6 +60,8 @@ async def create_project(
         name=data.name.strip(),
         key=data.key,
         description=data.description,
+        icon=data.icon,
+        color=data.color,
         start_date=data.start_date,
         due_date=data.due_date,
     )
@@ -69,6 +76,135 @@ async def create_project(
     )
     await db.commit()
     await db.refresh(project)
+    return project
+
+
+@router.get("/archived", response_model=list[ProjectOut])
+async def list_archived_projects(
+    workspace_id: UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    role = await require_workspace(db, workspace_id, user.id)
+    query = select(Project).where(
+        Project.workspace_id == workspace_id,
+        Project.archived_at.is_not(None),
+    )
+    if role == "guest":
+        query = query.join(ProjectMember, ProjectMember.project_id == Project.id).where(
+            ProjectMember.user_id == user.id
+        )
+    return list((await db.scalars(query.order_by(Project.archived_at.desc()))).all())
+
+
+@router.patch("/{project_id}", response_model=ProjectOut)
+async def update_project(
+    project_id: UUID,
+    data: ProjectUpdate,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        raise HTTPException(status_code=409, detail="Restore the project before editing it")
+
+    values = data.model_dump(exclude_unset=True)
+    if "name" in values and values["name"] is not None:
+        values["name"] = values["name"].strip()
+    if values.get("name") == "":
+        raise HTTPException(status_code=422, detail="Project name cannot be blank")
+
+    next_start = values.get("start_date", project.start_date)
+    next_due = values.get("due_date", project.due_date)
+    if next_start and next_due and next_due < next_start:
+        raise HTTPException(status_code=422, detail="Project due date cannot be before start date")
+
+    changed = []
+    for field, value in values.items():
+        if getattr(project, field) != value:
+            setattr(project, field, value)
+            changed.append(field)
+    if changed:
+        db.add(
+            ActivityLog(
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                task_id=None,
+                actor_id=user.id,
+                action="project.updated",
+                summary=f"Updated {project.name}: {', '.join(changed)}",
+            )
+        )
+        await db.commit()
+        await db.refresh(project)
+        await publish(
+            project.workspace_id,
+            "project.updated",
+            ProjectOut.model_validate(project).model_dump(mode="json"),
+        )
+    return project
+
+
+@router.post("/{project_id}/archive", response_model=ProjectOut)
+async def archive_project(
+    project_id: UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is None:
+        project.archived_at = datetime.now(UTC)
+        project.status = "archived"
+        db.add(
+            ActivityLog(
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                task_id=None,
+                actor_id=user.id,
+                action="project.archived",
+                summary=f"Archived {project.name}",
+            )
+        )
+        await db.commit()
+        await db.refresh(project)
+        await publish(
+            project.workspace_id,
+            "project.updated",
+            ProjectOut.model_validate(project).model_dump(mode="json"),
+        )
+    return project
+
+
+@router.post("/{project_id}/restore", response_model=ProjectOut)
+async def restore_project(
+    project_id: UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project, _ = await require_project(db, project_id, user.id)
+    await _can_manage_project(db, project, user.id)
+    if project.archived_at is not None:
+        project.archived_at = None
+        project.status = "active"
+        db.add(
+            ActivityLog(
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                task_id=None,
+                actor_id=user.id,
+                action="project.restored",
+                summary=f"Restored {project.name}",
+            )
+        )
+        await db.commit()
+        await db.refresh(project)
+        await publish(
+            project.workspace_id,
+            "project.updated",
+            ProjectOut.model_validate(project).model_dump(mode="json"),
+        )
     return project
 
 
