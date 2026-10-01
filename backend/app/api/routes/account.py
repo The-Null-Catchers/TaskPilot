@@ -1,13 +1,15 @@
 import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.account_models import AccountSecurity, AccountToken, SessionMetadata
+from app.account_models import AccountSecurity, AccountToken, SessionMetadata, UserProfile
 from app.api.deps import current_user
 from app.collaboration_models import AuditLog
 from app.core.config import settings
@@ -47,6 +49,70 @@ class DeleteAccountIn(BaseModel):
     confirmation: str
 
 
+class ProfileUpdateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    username: str | None = Field(default=None, min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
+    avatar_url: str | None = Field(default=None, max_length=500)
+    job_title: str | None = Field(default=None, max_length=120)
+    bio: str = Field(default="", max_length=1000)
+    timezone: str = Field(default="UTC", min_length=1, max_length=64)
+    language: str = Field(default="en", min_length=2, max_length=16, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Name must contain at least two visible characters")
+        return value
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().lower()
+
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Avatar URL must use http or https")
+        return value
+
+    @field_validator("job_title")
+    @classmethod
+    def normalize_job_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        value = value.strip()
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("Unknown timezone") from exc
+        return value
+
+    @field_validator("language")
+    @classmethod
+    def normalize_language(cls, value: str) -> str:
+        parts = value.strip().split("-")
+        if len(parts) == 1:
+            return parts[0].lower()
+        return "-".join([parts[0].lower(), *[part.upper() if len(part) == 2 else part for part in parts[1:]]])
+
+
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
@@ -60,6 +126,29 @@ def _audit(db: AsyncSession, action: str, request: Request, actor_id: UUID | Non
             metadata_json=json.dumps(metadata or {}),
         )
     )
+
+
+async def _profile(db: AsyncSession, user_id: UUID) -> UserProfile:
+    profile = await db.get(UserProfile, user_id)
+    if profile is None:
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+        await db.flush()
+    return profile
+
+
+def _profile_payload(user: User, profile: UserProfile) -> dict:
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "username": profile.username,
+        "avatar_url": profile.avatar_url,
+        "job_title": profile.job_title,
+        "bio": profile.bio,
+        "timezone": profile.timezone,
+        "language": profile.language,
+    }
 
 
 async def _security(db: AsyncSession, user_id: UUID) -> AccountSecurity:
@@ -135,6 +224,52 @@ async def account_status(user: User = Depends(current_user), db: AsyncSession = 
         "email_verified": security.email_verified_at is not None,
         "email_verified_at": security.email_verified_at,
     }
+
+
+@router.get("/profile")
+async def get_profile(
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _profile(db, user.id)
+    await db.commit()
+    return _profile_payload(user, profile)
+
+
+@router.put("/profile")
+async def update_profile(
+    data: ProfileUpdateIn,
+    request: Request,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await _profile(db, user.id)
+    if data.username:
+        owner = await db.scalar(
+            select(UserProfile.user_id).where(
+                UserProfile.username == data.username,
+                UserProfile.user_id != user.id,
+            )
+        )
+        if owner:
+            raise HTTPException(status_code=409, detail="Username is already in use")
+    user.name = data.name
+    profile.username = data.username
+    profile.avatar_url = data.avatar_url
+    profile.job_title = data.job_title
+    profile.bio = data.bio.strip()
+    profile.timezone = data.timezone
+    profile.language = data.language
+    _audit(
+        db,
+        "account.profile_updated",
+        request,
+        user.id,
+        {"fields": ["name", "username", "avatar_url", "job_title", "bio", "timezone", "language"]},
+    )
+    await db.commit()
+    await db.refresh(profile)
+    return _profile_payload(user, profile)
 
 
 @router.post("/email-verification/request", status_code=202)
@@ -394,6 +529,14 @@ async def delete_account(
     user.email = f"deleted-{uuid4().hex}@deleted.taskpilot.invalid"
     user.name = "Deleted user"
     user.password_hash = hash_password(new_refresh_token())
+    profile = await db.get(UserProfile, user.id)
+    if profile:
+        profile.username = None
+        profile.avatar_url = None
+        profile.job_title = None
+        profile.bio = ""
+        profile.timezone = "UTC"
+        profile.language = "en"
     await db.execute(
         update(Session)
         .where(Session.user_id == user.id, Session.revoked_at.is_(None))

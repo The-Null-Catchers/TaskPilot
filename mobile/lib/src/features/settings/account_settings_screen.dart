@@ -16,6 +16,7 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _account;
+  Map<String, dynamic>? _profile;
   List<Map<String, dynamic>> _sessions = const [];
 
   @override
@@ -43,18 +44,91 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
     try {
       final responses = await Future.wait([
         ref.read(apiProvider).dio.get('/api/v1/auth/account'),
+        ref.read(apiProvider).dio.get('/api/v1/auth/profile'),
         ref.read(apiProvider).dio.get('/api/v1/auth/sessions'),
       ]);
       if (!mounted) return;
       setState(() {
         _account = (responses[0].data as Map).cast<String, dynamic>();
-        _sessions = (responses[1].data as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
+        _profile = (responses[1].data as Map).cast<String, dynamic>();
+        _sessions = (responses[2].data as List).map((item) => (item as Map).cast<String, dynamic>()).toList();
       });
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = _message(error, 'Could not load account settings.'));
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _editProfile() async {
+    final profile = _profile;
+    if (profile == null) return;
+    final name = TextEditingController(text: profile['name'] as String? ?? '');
+    final username = TextEditingController(text: profile['username'] as String? ?? '');
+    final jobTitle = TextEditingController(text: profile['job_title'] as String? ?? '');
+    final avatarUrl = TextEditingController(text: profile['avatar_url'] as String? ?? '');
+    final timezone = TextEditingController(text: profile['timezone'] as String? ?? 'UTC');
+    final language = TextEditingController(text: profile['language'] as String? ?? 'en');
+    final bio = TextEditingController(text: profile['bio'] as String? ?? '');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit profile'),
+        content: SizedBox(
+          width: 440,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: name, decoration: const InputDecoration(labelText: 'Name')),
+                const SizedBox(height: 12),
+                TextField(controller: username, decoration: const InputDecoration(labelText: 'Username')),
+                const SizedBox(height: 12),
+                TextField(controller: jobTitle, decoration: const InputDecoration(labelText: 'Job title')),
+                const SizedBox(height: 12),
+                TextField(controller: avatarUrl, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Avatar URL')),
+                const SizedBox(height: 12),
+                TextField(controller: timezone, decoration: const InputDecoration(labelText: 'Timezone', hintText: 'Asia/Hebron')),
+                const SizedBox(height: 12),
+                TextField(controller: language, decoration: const InputDecoration(labelText: 'Language', hintText: 'en')),
+                const SizedBox(height: 12),
+                TextField(controller: bio, maxLength: 1000, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Bio')),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (confirmed != true || name.text.trim().length < 2) return;
+    String? nullable(TextEditingController controller) {
+      final value = controller.text.trim();
+      return value.isEmpty ? null : value;
+    }
+    try {
+      final response = await ref.read(apiProvider).dio.put('/api/v1/auth/profile', data: {
+        'name': name.text.trim(),
+        'username': nullable(username),
+        'job_title': nullable(jobTitle),
+        'avatar_url': nullable(avatarUrl),
+        'timezone': timezone.text.trim(),
+        'language': language.text.trim(),
+        'bio': bio.text.trim(),
+      });
+      if (!mounted) return;
+      final updated = (response.data as Map).cast<String, dynamic>();
+      setState(() {
+        _profile = updated;
+        if (_account != null) _account = {..._account!, 'name': updated['name']};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile updated.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_message(error, 'Could not update profile.'))));
     }
   }
 
@@ -244,19 +318,27 @@ class _AccountSettingsScreenState extends ConsumerState<AccountSettingsScreen> {
                             children: [
                               CircleAvatar(
                                 radius: 28,
-                                child: Text(((account['name'] as String?) ?? 'T').trim().isEmpty ? 'T' : (account['name'] as String).trim().substring(0, 1).toUpperCase()),
+                                backgroundImage: (_profile?['avatar_url'] as String?)?.isNotEmpty == true ? NetworkImage(_profile!['avatar_url'] as String) : null,
+                                child: (_profile?['avatar_url'] as String?)?.isNotEmpty == true ? null : Text(((account['name'] as String?) ?? 'T').trim().isEmpty ? 'T' : (account['name'] as String).trim().substring(0, 1).toUpperCase()),
                               ),
                               const SizedBox(width: 16),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(account['name'] as String? ?? 'TaskPilot user', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                                    Text(_profile?['name'] as String? ?? account['name'] as String? ?? 'TaskPilot user', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
                                     const SizedBox(height: 4),
-                                    Text(account['email'] as String? ?? '', style: Theme.of(context).textTheme.bodyMedium),
+                                    if ((_profile?['username'] as String?)?.isNotEmpty == true) Text('@${_profile!['username'] as String}', style: Theme.of(context).textTheme.bodyMedium),
+                                    if ((_profile?['job_title'] as String?)?.isNotEmpty == true) Text(_profile!['job_title'] as String, style: Theme.of(context).textTheme.bodySmall),
+                                    Text(account['email'] as String? ?? '', style: Theme.of(context).textTheme.bodySmall),
+                                    if ((_profile?['bio'] as String?)?.isNotEmpty == true) ...[
+                                      const SizedBox(height: 6),
+                                      Text(_profile!['bio'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+                                    ],
                                   ],
                                 ),
                               ),
+                              IconButton(onPressed: _editProfile, icon: const Icon(Icons.edit_outlined), tooltip: 'Edit profile'),
                             ],
                           ),
                         ),

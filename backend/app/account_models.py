@@ -23,6 +23,24 @@ class AccountSecurity(Base):
     )
 
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    username: Mapped[str | None] = mapped_column(String(40), nullable=True, unique=True, index=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    bio: Mapped[str] = mapped_column(Text, default="")
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    language: Mapped[str] = mapped_column(String(16), default="en")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now, onupdate=now
+    )
+
+
 class SessionMetadata(Base):
     __tablename__ = "session_metadata"
 
