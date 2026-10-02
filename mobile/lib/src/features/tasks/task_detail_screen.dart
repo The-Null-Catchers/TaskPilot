@@ -41,6 +41,9 @@ class TaskDetailScreen extends ConsumerWidget {
     final description = TextEditingController(text: task.description);
     var priority = task.priority;
     var status = task.status;
+    DateTime? startDate = task.startDate == null ? null : DateTime.tryParse(task.startDate!);
+    DateTime? dueDate = task.dueDate == null ? null : DateTime.tryParse(task.dueDate!);
+    final estimate = TextEditingController(text: task.estimateMinutes?.toString() ?? '');
     final save = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(builder: (context, setDialogState) => AlertDialog(
@@ -53,13 +56,44 @@ class TaskDetailScreen extends ConsumerWidget {
           DropdownButtonFormField<String>(initialValue: priority, decoration: const InputDecoration(labelText: 'Priority'), items: const ['urgent', 'high', 'medium', 'low', 'none'].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(), onChanged: (value) { if (value != null) setDialogState(() => priority = value); }),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(initialValue: status, decoration: const InputDecoration(labelText: 'Status'), items: const ['open', 'in_progress', 'review', 'done'].map((value) => DropdownMenuItem(value: value, child: Text(value.replaceAll('_', ' ')))).toList(), onChanged: (value) { if (value != null) setDialogState(() => status = value); }),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              icon: const Icon(Icons.play_circle_outline_rounded),
+              label: Text(startDate == null ? 'Start date' : MaterialLocalizations.of(context).formatMediumDate(startDate!)),
+              onPressed: () async {
+                final picked = await showDatePicker(context: context, initialDate: startDate ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
+                if (picked != null) setDialogState(() => startDate = picked);
+              },
+            )),
+            const SizedBox(width: 8),
+            if (startDate != null) IconButton(onPressed: () => setDialogState(() => startDate = null), icon: const Icon(Icons.clear_rounded), tooltip: 'Clear start date'),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: OutlinedButton.icon(
+              icon: const Icon(Icons.event_outlined),
+              label: Text(dueDate == null ? 'Due date' : MaterialLocalizations.of(context).formatMediumDate(dueDate!)),
+              onPressed: () async {
+                final picked = await showDatePicker(context: context, initialDate: dueDate ?? startDate ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2100));
+                if (picked != null) setDialogState(() => dueDate = picked);
+              },
+            )),
+            const SizedBox(width: 8),
+            if (dueDate != null) IconButton(onPressed: () => setDialogState(() => dueDate = null), icon: const Icon(Icons.clear_rounded), tooltip: 'Clear due date'),
+          ]),
+          const SizedBox(height: 12),
+          TextField(controller: estimate, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Estimate (minutes)', hintText: '120')),
         ])),
         actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save'))],
       )),
     );
     if (save != true || title.text.trim().isEmpty) return;
     try {
-      final outcome = await ref.read(taskDetailProvider(taskId).notifier).updateTask(title: title.text.trim(), description: description.text.trim(), priority: priority, status: status, dueDate: task.dueDate);
+      final estimateMinutes = estimate.text.trim().isEmpty ? null : int.tryParse(estimate.text.trim());
+      final startIso = startDate == null ? null : DateTime.utc(startDate!.year, startDate!.month, startDate!.day, 12).toIso8601String();
+      final dueIso = dueDate == null ? null : DateTime.utc(dueDate!.year, dueDate!.month, dueDate!.day, 12).toIso8601String();
+      final outcome = await ref.read(taskDetailProvider(taskId).notifier).updateTask(title: title.text.trim(), description: description.text.trim(), priority: priority, status: status, startDate: startIso, dueDate: dueIso, estimateMinutes: estimateMinutes);
       if (context.mounted) _showOutcome(context, outcome);
     } catch (_) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Task could not be saved. Check your permissions and try again.')));
