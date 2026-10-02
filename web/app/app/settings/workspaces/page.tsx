@@ -26,6 +26,13 @@ type Invitation = {
   created_at:string
 }
 type CreatedInvitation = Invitation & { token:string }
+type WorkspacePreferences = {
+  default_project_status:'planning'|'active'
+  default_task_priority:'urgent'|'high'|'medium'|'low'|'none'
+  time_tracking_enabled:boolean
+  guest_access_enabled:boolean
+  updated_at:string
+}
 
 function roleLabel(role:string){ return role.charAt(0).toUpperCase()+role.slice(1) }
 
@@ -74,9 +81,14 @@ export default function WorkspaceSettingsPage(){
     queryFn:()=>request<Invitation[]>(`/api/v1/workspaces/${selectedId}/invitations`,{},token),
     enabled:!!token&&!!selectedId&&canManage,
   })
+  const preferences=useQuery({
+    queryKey:['workspace-settings-preferences',selectedId],
+    queryFn:()=>request<WorkspacePreferences>(`/api/v1/workspaces/${selectedId}/settings`,{},token),
+    enabled:!!token&&!!selectedId,
+  })
 
   async function refresh(){
-    await Promise.all([active.refetch(),archived.refetch(),members.refetch()])
+    await Promise.all([active.refetch(),archived.refetch(),members.refetch(),preferences.refetch()])
     if(canManage)await invitations.refetch()
   }
 
@@ -92,6 +104,23 @@ export default function WorkspaceSettingsPage(){
     const name=String(new FormData(e.currentTarget).get('name')??'').trim()
     if(!selectedId||!name)return
     await action('rename',async()=>{ await request(`/api/v1/workspaces/${selectedId}`,{method:'PATCH',body:JSON.stringify({name})},token) },'Workspace renamed.')
+  }
+
+  async function savePreferences(e:FormEvent<HTMLFormElement>){
+    e.preventDefault()
+    if(!selectedId)return
+    const data=new FormData(e.currentTarget)
+    await action('preferences',async()=>{
+      await request<WorkspacePreferences>(`/api/v1/workspaces/${selectedId}/settings`,{
+        method:'PATCH',
+        body:JSON.stringify({
+          default_project_status:String(data.get('default_project_status')),
+          default_task_priority:String(data.get('default_task_priority')),
+          time_tracking_enabled:data.get('time_tracking_enabled')==='on',
+          guest_access_enabled:data.get('guest_access_enabled')==='on',
+        }),
+      },token)
+    },'Workspace defaults saved.')
   }
 
   async function invite(e:FormEvent<HTMLFormElement>){
@@ -195,6 +224,18 @@ export default function WorkspaceSettingsPage(){
             <div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex items-center gap-2"><h2 className="text-xl font-semibold">{selected.name}</h2>{isArchived&&<span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">Archived</span>}</div><p className="mt-1 text-sm muted">Your role: {roleLabel(actorRole??'loading')}</p></div><div className="flex flex-wrap gap-2">{actorRole==='owner'&&isArchived&&<button disabled={busy==='restore'} onClick={()=>void restoreWorkspace()} className="rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-medium">Restore</button>}{actorRole==='owner'&&!isArchived&&<button disabled={busy==='archive'} onClick={()=>void archiveWorkspace()} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-medium"><Archive size={15}/>Archive</button>}{actorRole&&actorRole!=='owner'&&<button disabled={busy==='leave'} onClick={()=>void leaveWorkspace()} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-medium"><LogOut size={15}/>Leave</button>}</div></div>
             {canManage&&<form onSubmit={rename} className="mt-6 flex gap-2"><input name="name" defaultValue={selected.name} minLength={2} maxLength={120} className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm"/><button disabled={busy==='rename'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Rename</button></form>}
           </div>
+
+          {preferences.data&&<form onSubmit={savePreferences} className="panel rounded-2xl p-5 sm:p-6">
+            <h2 className="font-semibold">Workspace defaults</h2>
+            <p className="mt-1 text-sm muted">These settings provide shared defaults for projects and task planning in this workspace.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium">Default project status<select name="default_project_status" defaultValue={preferences.data.default_project_status} disabled={!canManage} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value="active">Active</option><option value="planning">Planning</option></select></label>
+              <label className="text-sm font-medium">Default task priority<select name="default_task_priority" defaultValue={preferences.data.default_task_priority} disabled={!canManage} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5">{['none','low','medium','high','urgent'].map(priority=><option key={priority} value={priority}>{priority[0].toUpperCase()+priority.slice(1)}</option>)}</select></label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] p-4 text-sm"><span>Time tracking enabled</span><input type="checkbox" name="time_tracking_enabled" defaultChecked={preferences.data.time_tracking_enabled} disabled={!canManage}/></label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] p-4 text-sm"><span>Allow guest access</span><input type="checkbox" name="guest_access_enabled" defaultChecked={preferences.data.guest_access_enabled} disabled={!canManage}/></label>
+            </div>
+            {canManage&&<div className="mt-5 flex justify-end"><button disabled={busy==='preferences'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy==='preferences'?'Saving…':'Save defaults'}</button></div>}
+          </form>}
 
           <div className="panel rounded-2xl p-5 sm:p-6">
             <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/10 text-indigo-600"><Users size={19}/></span><div><h2 className="font-semibold">Members</h2><p className="text-sm muted">Roles are enforced by the API, including guest project isolation.</p></div></div>
