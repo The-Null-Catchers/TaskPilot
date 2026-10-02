@@ -120,7 +120,7 @@ class TaskCreate(BaseModel):
     column_id: UUID
     title: str = Field(min_length=1, max_length=240)
     description: str = Field(default="", max_length=50000)
-    priority: Literal["urgent", "high", "medium", "low", "none"] = "none"
+    priority: Literal["urgent", "high", "medium", "low", "none"] | None = None
     start_date: datetime | None = None
     due_date: datetime | None = None
     estimate_minutes: int | None = Field(default=None, ge=0, le=525600)

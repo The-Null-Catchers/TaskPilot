@@ -1,10 +1,37 @@
 'use client'
-import { Moon, Sun } from 'lucide-react'
+import { Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { useAuth } from '@/components/providers'
+import { request } from '@/lib/api'
+
+type ThemeMode='light'|'dark'|'system'
+
+function apply(mode:ThemeMode){
+  const dark=mode==='dark'||(mode==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)
+  document.documentElement.classList.toggle('dark',dark)
+}
+
 export function ThemeToggle(){
-  const [dark,setDark]=useState(false)
-  useEffect(()=>{ const saved=localStorage.getItem('tp-theme'); const value=saved==='dark'||(!saved&&matchMedia('(prefers-color-scheme: dark)').matches); setDark(value); document.documentElement.classList.toggle('dark',value) },[])
-  const toggle=()=>{ const value=!dark; setDark(value); document.documentElement.classList.toggle('dark',value); localStorage.setItem('tp-theme',value?'dark':'light') }
-  return <button aria-label="Toggle theme" onClick={toggle} className="focus-ring rounded-xl border border-[var(--line)] p-2 hover:bg-black/5 dark:hover:bg-white/5">{dark?<Sun size={18}/>:<Moon size={18}/>}</button>
+  const {token}=useAuth()
+  const [mode,setMode]=useState<ThemeMode>('system')
+  useEffect(()=>{
+    const saved=localStorage.getItem('tp-theme')
+    const value:ThemeMode=saved==='dark'||saved==='light'||saved==='system'?saved:'system'
+    setMode(value)
+    apply(value)
+    const media=matchMedia('(prefers-color-scheme: dark)')
+    const listener=()=>{if((localStorage.getItem('tp-theme')??'system')==='system')apply('system')}
+    media.addEventListener('change',listener)
+    return()=>media.removeEventListener('change',listener)
+  },[])
+  const cycle=()=>{
+    const next:ThemeMode=mode==='system'?'light':mode==='light'?'dark':'system'
+    setMode(next)
+    localStorage.setItem('tp-theme',next)
+    apply(next)
+    if(token)void request('/api/v1/settings/user',{method:'PATCH',body:JSON.stringify({theme:next})},token).catch(()=>{})
+  }
+  const label=`Theme: ${mode}. Click to switch.`
+  return <button aria-label={label} title={label} onClick={cycle} className="focus-ring rounded-xl border border-[var(--line)] p-2 hover:bg-black/5 dark:hover:bg-white/5">{mode==='light'?<Sun size={18}/>:mode==='dark'?<Moon size={18}/>:<Monitor size={18}/>}</button>
 }

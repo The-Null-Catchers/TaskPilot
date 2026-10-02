@@ -11,6 +11,7 @@ from app.collaboration_schemas import ProjectMemberAdd, ProjectMemberOut
 from app.db import get_db
 from app.models import ActivityLog, BoardColumn, Project, Task, User, WorkspaceMember
 from app.realtime import publish
+from app.settings_models import ProjectSetting, WorkspaceSetting
 from app.schemas import (
     BoardOut,
     ColumnCreate,
@@ -64,6 +65,7 @@ async def create_project(
             status_code=409,
             detail="Project key already exists in this workspace",
         )
+    workspace_setting = await db.get(WorkspaceSetting, data.workspace_id)
     project = Project(
         workspace_id=data.workspace_id,
         owner_id=user.id,
@@ -72,6 +74,7 @@ async def create_project(
         description=data.description,
         icon=data.icon,
         color=data.color,
+        status=workspace_setting.default_project_status if workspace_setting else "active",
         start_date=data.start_date,
         due_date=data.due_date,
     )
@@ -234,12 +237,17 @@ async def board(
             )
         ).all()
     )
+    task_query = select(Task).where(
+        Task.project_id == project.id,
+        Task.deleted_at.is_(None),
+    )
+    project_setting = await db.get(ProjectSetting, project.id)
+    if project_setting is not None and not project_setting.show_completed_tasks:
+        task_query = task_query.where(Task.status != "done")
     tasks = list(
         (
             await db.scalars(
-                select(Task)
-                .where(Task.project_id == project.id, Task.deleted_at.is_(None))
-                .order_by(Task.column_id, Task.position)
+                task_query.order_by(Task.column_id, Task.position)
             )
         ).all()
     )

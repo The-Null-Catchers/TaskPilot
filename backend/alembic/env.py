@@ -14,6 +14,7 @@ from app import (  # noqa: F401
     notification_models,
     planning_models,
     productivity_models,
+    settings_models,
     task_collaboration_models,
 )
 from app.core.config import settings

@@ -25,6 +25,7 @@ from app.db import get_db
 from app.domain import can_invite_role, can_manage_member
 from app.models import Project, User, Workspace, WorkspaceInvitation, WorkspaceMember
 from app.schemas import WorkspaceCreate, WorkspaceOut
+from app.settings_models import WorkspaceSetting
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -187,6 +188,13 @@ async def update_member_role(
         raise HTTPException(status_code=404, detail="Workspace member not found")
     if not can_manage_member(actor_role, member.role, data.role):
         raise HTTPException(status_code=403, detail="You cannot change this member's role")
+    workspace_setting = await db.get(WorkspaceSetting, workspace_id)
+    if (
+        data.role == "guest"
+        and workspace_setting is not None
+        and not workspace_setting.guest_access_enabled
+    ):
+        raise HTTPException(status_code=409, detail="Guest access is disabled for this workspace")
     previous_role = member.role
     member.role = data.role
     _audit(
@@ -293,6 +301,13 @@ async def create_invitation(
     actor_role = await require_workspace(db, workspace_id, user.id, {"owner", "admin"})
     if not can_invite_role(actor_role, data.role):
         raise HTTPException(status_code=403, detail="You cannot invite a member with this role")
+    workspace_setting = await db.get(WorkspaceSetting, workspace_id)
+    if (
+        data.role == "guest"
+        and workspace_setting is not None
+        and not workspace_setting.guest_access_enabled
+    ):
+        raise HTTPException(status_code=409, detail="Guest access is disabled for this workspace")
     email = data.email.lower()
     existing_member = await db.scalar(
         select(WorkspaceMember.id)
@@ -363,6 +378,13 @@ async def _invitation_from_token(db: AsyncSession, token: str) -> WorkspaceInvit
     archive = await db.get(WorkspaceArchive, invitation.workspace_id)
     if archive is not None:
         raise HTTPException(status_code=409, detail="Workspace is archived")
+    workspace_setting = await db.get(WorkspaceSetting, invitation.workspace_id)
+    if (
+        invitation.role == "guest"
+        and workspace_setting is not None
+        and not workspace_setting.guest_access_enabled
+    ):
+        raise HTTPException(status_code=409, detail="Guest access is disabled for this workspace")
     return invitation
 
 

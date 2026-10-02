@@ -26,6 +26,13 @@ type Invitation = {
   created_at:string
 }
 type CreatedInvitation = Invitation & { token:string }
+type WorkspacePreferences = {
+  default_project_status:'planning'|'active'
+  default_task_priority:'urgent'|'high'|'medium'|'low'|'none'
+  time_tracking_enabled:boolean
+  guest_access_enabled:boolean
+  updated_at:string
+}
 
 function roleLabel(role:string){ return role.charAt(0).toUpperCase()+role.slice(1) }
 
@@ -74,9 +81,14 @@ export default function WorkspaceSettingsPage(){
     queryFn:()=>request<Invitation[]>(`/api/v1/workspaces/${selectedId}/invitations`,{},token),
     enabled:!!token&&!!selectedId&&canManage,
   })
+  const preferences=useQuery({
+    queryKey:['workspace-settings-preferences',selectedId],
+    queryFn:()=>request<WorkspacePreferences>(`/api/v1/workspaces/${selectedId}/settings`,{},token),
+    enabled:!!token&&!!selectedId,
+  })
 
   async function refresh(){
-    await Promise.all([active.refetch(),archived.refetch(),members.refetch()])
+    await Promise.all([active.refetch(),archived.refetch(),members.refetch(),preferences.refetch()])
     if(canManage)await invitations.refetch()
   }
 
@@ -92,6 +104,23 @@ export default function WorkspaceSettingsPage(){
     const name=String(new FormData(e.currentTarget).get('name')??'').trim()
     if(!selectedId||!name)return
     await action('rename',async()=>{ await request(`/api/v1/workspaces/${selectedId}`,{method:'PATCH',body:JSON.stringify({name})},token) },'Workspace renamed.')
+  }
+
+  async function savePreferences(e:FormEvent<HTMLFormElement>){
+    e.preventDefault()
+    if(!selectedId)return
+    const data=new FormData(e.currentTarget)
+    await action('preferences',async()=>{
+      await request<WorkspacePreferences>(`/api/v1/workspaces/${selectedId}/settings`,{
+        method:'PATCH',
+        body:JSON.stringify({
+          default_project_status:String(data.get('default_project_status')),
+          default_task_priority:String(data.get('default_task_priority')),
+          time_tracking_enabled:data.get('time_tracking_enabled')==='on',
+          guest_access_enabled:data.get('guest_access_enabled')==='on',
+        }),
+      },token)
+    },'Workspace defaults saved.')
   }
 
   async function invite(e:FormEvent<HTMLFormElement>){
@@ -196,18 +225,31 @@ export default function WorkspaceSettingsPage(){
             {canManage&&<form onSubmit={rename} className="mt-6 flex gap-2"><input name="name" defaultValue={selected.name} minLength={2} maxLength={120} className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm"/><button disabled={busy==='rename'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Rename</button></form>}
           </div>
 
+          {preferences.data&&<form key={selectedId} onSubmit={savePreferences} className="panel rounded-2xl p-5 sm:p-6">
+            <h2 className="font-semibold">Workspace defaults</h2>
+            <p className="mt-1 text-sm muted">These settings provide shared defaults for projects and task planning in this workspace.</p>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium">Default project status<select name="default_project_status" defaultValue={preferences.data.default_project_status} disabled={!canManage} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value="active">Active</option><option value="planning">Planning</option></select></label>
+              <label className="text-sm font-medium">Default task priority<select name="default_task_priority" defaultValue={preferences.data.default_task_priority} disabled={!canManage} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5">{['none','low','medium','high','urgent'].map(priority=><option key={priority} value={priority}>{priority[0].toUpperCase()+priority.slice(1)}</option>)}</select></label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] p-4 text-sm"><span>Time tracking enabled</span><input type="checkbox" name="time_tracking_enabled" defaultChecked={preferences.data.time_tracking_enabled} disabled={!canManage}/></label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] p-4 text-sm"><span>Allow guest access</span><input type="checkbox" name="guest_access_enabled" defaultChecked={preferences.data.guest_access_enabled} disabled={!canManage}/></label>
+            </div>
+            {canManage&&<div className="mt-5 flex justify-end"><button disabled={busy==='preferences'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{busy==='preferences'?'Saving…':'Save defaults'}</button></div>}
+          </form>}
+
           <div className="panel rounded-2xl p-5 sm:p-6">
             <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-500/10 text-indigo-600"><Users size={19}/></span><div><h2 className="font-semibold">Members</h2><p className="text-sm muted">Roles are enforced by the API, including guest project isolation.</p></div></div>
             <div className="mt-5 divide-y divide-[var(--line)]">{members.data?.map(member=>{
               const actorCanManage=actorRole==='owner'?member.role!=='owner':actorRole==='admin'?!['owner','admin'].includes(member.role):false
-              const editableRoles=actorRole==='owner'?['admin','member','guest']:['member','guest']
+              const editableRolesBase=actorRole==='owner'?['admin','member','guest']:['member','guest']
+              const editableRoles=preferences.data?.guest_access_enabled===false?editableRolesBase.filter(role=>role!=='guest'):editableRolesBase
               return <div key={member.user_id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate font-medium">{member.name}</p>{member.role==='owner'&&<Crown size={15} className="text-amber-500"/>}</div><p className="truncate text-sm muted">{member.email}</p></div><div className="flex flex-wrap items-center gap-2">{actorCanManage&&!isArchived?<select value={member.role} onChange={event=>void changeRole(member,event.target.value)} disabled={busy===`role:${member.user_id}`} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm">{editableRoles.map(role=><option key={role} value={role}>{roleLabel(role)}</option>)}</select>:<span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs muted">{roleLabel(member.role)}</span>}{actorRole==='owner'&&member.user_id!==user?.id&&!isArchived&&<button onClick={()=>void transfer(member)} disabled={busy===`transfer:${member.user_id}`} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium">Transfer ownership</button>}{actorCanManage&&!isArchived&&<button onClick={()=>void removeMember(member)} disabled={busy===`remove:${member.user_id}`} className="rounded-xl border border-red-500/20 p-2 text-red-600" aria-label={`Remove ${member.name}`}><UserMinus size={15}/></button>}</div></div>
             })}</div>
           </div>
 
           {canManage&&<div className="panel rounded-2xl p-5 sm:p-6">
             <h2 className="font-semibold">Invite by email</h2><p className="mt-1 text-sm muted">Invitations expire after seven days and can only be accepted by the matching account email.</p>
-            <form onSubmit={invite} className="mt-5 grid gap-3 sm:grid-cols-[1fr_150px_auto]"><input required type="email" name="email" placeholder="teammate@example.com" className="rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm"/><select name="role" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm">{actorRole==='owner'&&<option value="admin">Admin</option>}<option value="member">Member</option><option value="guest">Guest</option></select><button disabled={busy==='invite'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Create invite</button></form>
+            <form onSubmit={invite} className="mt-5 grid gap-3 sm:grid-cols-[1fr_150px_auto]"><input required type="email" name="email" placeholder="teammate@example.com" className="rounded-xl border border-[var(--line)] bg-transparent px-3 py-2.5 text-sm"/><select name="role" className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm">{actorRole==='owner'&&<option value="admin">Admin</option>}<option value="member">Member</option>{preferences.data?.guest_access_enabled!==false&&<option value="guest">Guest</option>}</select><button disabled={busy==='invite'} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">Create invite</button></form>
             {inviteLink&&<div className="mt-4 flex gap-2 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3"><input readOnly value={inviteLink} className="min-w-0 flex-1 bg-transparent text-xs outline-none"/><button onClick={()=>void copyInvite()} className="rounded-lg border border-[var(--line)] p-2" aria-label="Copy invitation link"><Copy size={15}/></button></div>}
             <div className="mt-6"><p className="text-xs font-semibold uppercase tracking-wider muted">Active invitations</p><div className="mt-2 divide-y divide-[var(--line)]">{invitations.data?.length?invitations.data.map(invitation=><div key={invitation.id} className="flex items-center gap-3 py-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invitation.email}</p><p className="text-xs muted">{roleLabel(invitation.role)} · expires {new Date(invitation.expires_at).toLocaleDateString()} · email {invitation.delivery_status}</p></div><button onClick={()=>void cancelInvitation(invitation)} disabled={busy===`invite:${invitation.id}`} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-medium">Cancel</button></div>):<p className="py-3 text-sm muted">No active invitations</p>}</div></div>
           </div>}
