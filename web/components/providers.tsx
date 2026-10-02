@@ -7,6 +7,7 @@ type AuthValue = { user:User|null; token:string|null; loading:boolean; login:(em
 const AuthContext = createContext<AuthValue | null>(null)
 
 type AuthPayload = { access_token:string; user:User }
+type UserSettings = { theme:'light'|'dark'|'system' }
 
 function AuthProvider({children}:{children:React.ReactNode}) {
   const [user,setUser] = useState<User|null>(null)
@@ -16,6 +17,14 @@ function AuthProvider({children}:{children:React.ReactNode}) {
   useEffect(() => {
     request<AuthPayload>('/api/v1/auth/refresh',{method:'POST',body:JSON.stringify({client:'web'})}).then(accept).catch(()=>{}).finally(()=>setLoading(false))
   },[accept])
+  useEffect(()=>{
+    if(!token)return
+    request<UserSettings>('/api/v1/settings/user',{},token).then(settings=>{
+      localStorage.setItem('tp-theme',settings.theme)
+      const dark=settings.theme==='dark'||(settings.theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)
+      document.documentElement.classList.toggle('dark',dark)
+    }).catch(()=>{})
+  },[token])
   const login = useCallback(async(email:string,password:string)=>accept(await request<AuthPayload>('/api/v1/auth/login',{method:'POST',body:JSON.stringify({email,password,client:'web'})})),[accept])
   const register = useCallback(async(name:string,email:string,password:string)=>accept(await request<AuthPayload>('/api/v1/auth/register',{method:'POST',body:JSON.stringify({name,email,password})})),[accept])
   const logout = useCallback(async()=>{ await request('/api/v1/auth/logout',{method:'POST'}).catch(()=>{}); setUser(null); setToken(null) },[])
