@@ -9,6 +9,14 @@ import { FormEvent, useEffect, useState } from 'react'
 import { useAuth } from '@/components/providers'
 import { Board, Project, request } from '@/lib/api'
 
+type ProjectPreferences={
+  default_task_priority:'urgent'|'high'|'medium'|'low'|'none'
+  time_tracking_enabled:boolean
+  auto_complete_on_done_column:boolean
+  show_completed_tasks:boolean
+  updated_at:string
+}
+
 const statuses = [
   ['planning', 'Planning'],
   ['active', 'Active'],
@@ -32,6 +40,11 @@ export default function ProjectSettingsPage(){
     enabled:!!token&&!!projectId,
   })
   const project=board.data?.project
+  const preferences=useQuery({
+    queryKey:['project-settings-preferences',projectId],
+    queryFn:()=>request<ProjectPreferences>(`/api/v1/projects/${projectId}/settings/preferences`,{},token),
+    enabled:!!token&&!!projectId,
+  })
 
   const save=useMutation({
     mutationFn:(payload:Record<string,unknown>)=>request<Project>(`/api/v1/projects/${projectId}`,{
@@ -49,6 +62,15 @@ export default function ProjectSettingsPage(){
     onError:(err)=>{setNotice('');setError(err instanceof Error?err.message:'Could not save project settings.')},
   })
 
+  const savePreferences=useMutation({
+    mutationFn:(payload:Partial<ProjectPreferences>)=>request<ProjectPreferences>(`/api/v1/projects/${projectId}/settings/preferences`,{
+      method:'PATCH',
+      body:JSON.stringify(payload),
+    },token),
+    onSuccess:async()=>{setError('');setNotice('Project defaults saved.');await preferences.refetch()},
+    onError:(err)=>{setNotice('');setError(err instanceof Error?err.message:'Could not save project defaults.')},
+  })
+
   async function submit(event:FormEvent<HTMLFormElement>){
     event.preventDefault()
     if(!project)return
@@ -62,6 +84,17 @@ export default function ProjectSettingsPage(){
       status:value('status'),
       start_date:value('start_date')||null,
       due_date:value('due_date')||null,
+    }).catch(()=>undefined)
+  }
+
+  async function submitPreferences(event:FormEvent<HTMLFormElement>){
+    event.preventDefault()
+    const data=new FormData(event.currentTarget)
+    await savePreferences.mutateAsync({
+      default_task_priority:String(data.get('default_task_priority')) as ProjectPreferences['default_task_priority'],
+      time_tracking_enabled:data.get('time_tracking_enabled')==='on',
+      auto_complete_on_done_column:data.get('auto_complete_on_done_column')==='on',
+      show_completed_tasks:data.get('show_completed_tasks')==='on',
     }).catch(()=>undefined)
   }
 
@@ -119,6 +152,19 @@ export default function ProjectSettingsPage(){
         </div>
         {!archived&&<div className="mt-6 flex justify-end"><button disabled={save.isPending} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Save size={16}/>{save.isPending?'Saving…':'Save changes'}</button></div>}
       </form>
+
+      {preferences.data&&<form onSubmit={submitPreferences} className="panel rounded-2xl p-5 sm:p-6">
+        <div><h2 className="text-lg font-semibold">Project defaults</h2><p className="mt-1 text-sm muted">Control defaults and behavior that apply specifically to this project.</p></div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm font-medium">Default task priority<select name="default_task_priority" defaultValue={preferences.data.default_task_priority} disabled={archived} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5">{['none','low','medium','high','urgent'].map(priority=><option key={priority} value={priority}>{priority[0].toUpperCase()+priority.slice(1)}</option>)}</select></label>
+          <div className="grid gap-3 rounded-xl border border-[var(--line)] p-4">
+            <label className="flex items-center justify-between gap-3 text-sm"><span>Time tracking</span><input type="checkbox" name="time_tracking_enabled" defaultChecked={preferences.data.time_tracking_enabled} disabled={archived}/></label>
+            <label className="flex items-center justify-between gap-3 text-sm"><span>Auto-complete tasks moved to Done</span><input type="checkbox" name="auto_complete_on_done_column" defaultChecked={preferences.data.auto_complete_on_done_column} disabled={archived}/></label>
+            <label className="flex items-center justify-between gap-3 text-sm"><span>Show completed tasks</span><input type="checkbox" name="show_completed_tasks" defaultChecked={preferences.data.show_completed_tasks} disabled={archived}/></label>
+          </div>
+        </div>
+        {!archived&&<div className="mt-5 flex justify-end"><button disabled={savePreferences.isPending} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Save size={16}/>{savePreferences.isPending?'Saving…':'Save defaults'}</button></div>}
+      </form>}
 
       <section className="rounded-2xl border border-amber-500/25 bg-amber-500/5 p-5 sm:p-6">
         <h2 className="font-semibold">{archived?'Archived project':'Archive project'}</h2>
