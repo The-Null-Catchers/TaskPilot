@@ -121,7 +121,9 @@ class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=240)
     description: str = Field(default="", max_length=50000)
     priority: Literal["urgent", "high", "medium", "low", "none"] = "none"
+    start_date: datetime | None = None
     due_date: datetime | None = None
+    estimate_minutes: int | None = Field(default=None, ge=0, le=525600)
 
 
 class TaskPatch(BaseModel):
@@ -130,7 +132,9 @@ class TaskPatch(BaseModel):
     description: str | None = Field(default=None, max_length=50000)
     priority: Literal["urgent", "high", "medium", "low", "none"] | None = None
     status: Literal["open", "in_progress", "review", "done"] | None = None
+    start_date: datetime | None = None
     due_date: datetime | None = None
+    estimate_minutes: int | None = Field(default=None, ge=0, le=525600)
 
 
 class TaskMove(BaseModel):
@@ -151,7 +155,9 @@ class TaskOut(ORMModel):
     priority: str
     status: str
     position: float
+    start_date: datetime | None
     due_date: datetime | None
+    estimate_minutes: int | None
     version: int
     created_at: datetime
     updated_at: datetime

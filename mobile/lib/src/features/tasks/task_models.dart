@@ -29,7 +29,7 @@ class BoardColumn {
 }
 
 class TaskItem {
-  const TaskItem({required this.id, required this.workspaceId, required this.projectId, required this.columnId, required this.identifier, required this.title, required this.description, required this.priority, required this.status, required this.position, required this.version, required this.createdAt, required this.updatedAt, this.dueDate});
+  const TaskItem({required this.id, required this.workspaceId, required this.projectId, required this.columnId, required this.identifier, required this.title, required this.description, required this.priority, required this.status, required this.position, required this.version, required this.createdAt, required this.updatedAt, this.startDate, this.dueDate, this.estimateMinutes});
   final String id;
   final String workspaceId;
   final String projectId;
@@ -41,11 +41,13 @@ class TaskItem {
   final String status;
   final double position;
   final int version;
+  final String? startDate;
   final String? dueDate;
+  final int? estimateMinutes;
   final String createdAt;
   final String updatedAt;
 
-  TaskItem copyWith({String? columnId,String? title,String? description,String? priority,String? status,double? position,int? version,String? dueDate,bool clearDueDate=false,String? updatedAt}) => TaskItem(
+  TaskItem copyWith({String? columnId,String? title,String? description,String? priority,String? status,double? position,int? version,String? startDate,bool clearStartDate=false,String? dueDate,bool clearDueDate=false,int? estimateMinutes,bool clearEstimate=false,String? updatedAt}) => TaskItem(
         id:id,
         workspaceId:workspaceId,
         projectId:projectId,
@@ -57,7 +59,9 @@ class TaskItem {
         status:status??this.status,
         position:position??this.position,
         version:version??this.version,
+        startDate:clearStartDate?null:startDate??this.startDate,
         dueDate:clearDueDate?null:dueDate??this.dueDate,
+        estimateMinutes:clearEstimate?null:estimateMinutes??this.estimateMinutes,
         createdAt:createdAt,
         updatedAt:updatedAt??this.updatedAt,
       );
@@ -74,11 +78,13 @@ class TaskItem {
         status: json['status'] as String,
         position: (json['position'] as num).toDouble(),
         version: json['version'] as int,
+        startDate: json['start_date'] as String?,
         dueDate: json['due_date'] as String?,
+        estimateMinutes: json['estimate_minutes'] as int?,
         createdAt: json['created_at'] as String,
         updatedAt: json['updated_at'] as String,
       );
-  Map<String, dynamic> toJson() => {'id': id, 'workspace_id': workspaceId, 'project_id': projectId, 'column_id': columnId, 'identifier': identifier, 'title': title, 'description': description, 'priority': priority, 'status': status, 'position': position, 'version': version, 'due_date': dueDate, 'created_at': createdAt, 'updated_at': updatedAt};
+  Map<String, dynamic> toJson() => {'id': id, 'workspace_id': workspaceId, 'project_id': projectId, 'column_id': columnId, 'identifier': identifier, 'title': title, 'description': description, 'priority': priority, 'status': status, 'position': position, 'version': version, 'start_date': startDate, 'due_date': dueDate, 'estimate_minutes': estimateMinutes, 'created_at': createdAt, 'updated_at': updatedAt};
 }
 
 class BoardData {

@@ -122,6 +122,7 @@ class Task(Base):
     position: Mapped[float] = mapped_column(Float, default=1000.0)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    estimate_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
