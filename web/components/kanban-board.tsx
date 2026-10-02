@@ -100,6 +100,13 @@ export function KanbanBoard({initial,token,onChanged}:{initial:Board;token:strin
    onChanged({...initial,tasks:initial.tasks.map(t=>t.id===updated.id?updated:t)})
    setSelected(updated)
  }
+ function archiveTask(taskId:string){
+   onChanged({...initial,tasks:initial.tasks.filter(task=>task.id!==taskId)})
+   if(selected?.id===taskId)setSelected(null)
+ }
+ function duplicatedTask(task:Task){
+   onChanged({...initial,tasks:[...initial.tasks,task]})
+ }
 
  function openCreateColumn(){setColumnError('');setColumnName('');setColumnDialog({mode:'create'})}
  function openRenameColumn(column:Column){setColumnError('');setColumnName(column.name);setColumnDialog({mode:'rename',column})}
@@ -167,6 +174,6 @@ export function KanbanBoard({initial,token,onChanged}:{initial:Board;token:strin
 
    {columnDialog&&<div className="fixed inset-0 z-50 grid place-items-center bg-black/35 p-4" onMouseDown={()=>setColumnDialog(null)}><div ref={columnDialogRef} role="dialog" aria-modal="true" aria-labelledby="column-dialog-title" tabIndex={-1} className="panel w-full max-w-md rounded-2xl p-5 shadow-soft" onMouseDown={e=>e.stopPropagation()}><div className="flex items-center justify-between"><h2 id="column-dialog-title" className="font-semibold">{columnDialog.mode==='create'?'Add board column':'Rename board column'}</h2><button onClick={()=>setColumnDialog(null)} className="rounded-lg p-1 muted" aria-label="Close"><X size={17}/></button></div><label className="mt-4 block text-xs font-medium muted">Column name<input autoFocus value={columnName} onChange={e=>setColumnName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void saveColumn()}} maxLength={80} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-transparent px-3 py-3 text-sm outline-none"/></label>{columnError&&<p className="mt-3 text-sm text-red-600">{columnError}</p>}<div className="mt-4 flex justify-end gap-2"><button onClick={()=>setColumnDialog(null)} className="rounded-xl px-4 py-2 text-sm">Cancel</button><button onClick={()=>void saveColumn()} disabled={columnBusy||!columnName.trim()} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{columnBusy?'Saving…':'Save'}</button></div></div></div>}
 
-   {selected&&<TaskDrawer task={selected} token={token} onClose={()=>setSelected(null)} onUpdated={updateTask}/>}
+   {selected&&<TaskDrawer task={selected} token={token} onClose={()=>setSelected(null)} onUpdated={updateTask} onArchived={archiveTask} onDuplicated={duplicatedTask}/>}
  </>
 }
