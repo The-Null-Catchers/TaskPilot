@@ -44,6 +44,7 @@ from app.models import (
     WorkspaceMember,
 )
 from app.realtime import publish
+from app.settings_models import ProjectSetting, WorkspaceSetting
 from app.schemas import CommentCreate, CommentOut, TaskCreate, TaskMove, TaskOut, TaskPatch
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -170,6 +171,15 @@ async def create_task(
             Task.deleted_at.is_(None),
         )
     )
+    project_setting = await db.get(ProjectSetting, project.id)
+    workspace_setting = await db.get(WorkspaceSetting, project.workspace_id)
+    default_priority = (
+        project_setting.default_task_priority
+        if project_setting is not None
+        else workspace_setting.default_task_priority
+        if workspace_setting is not None
+        else "none"
+    )
     task = Task(
         workspace_id=project.workspace_id,
         project_id=project.id,
@@ -179,7 +189,7 @@ async def create_task(
         identifier=f"{project.key}-{project.task_counter}",
         title=data.title.strip(),
         description=data.description,
-        priority=data.priority,
+        priority=data.priority if data.priority is not None else default_priority,
         start_date=data.start_date,
         due_date=data.due_date,
         estimate_minutes=data.estimate_minutes,
@@ -247,10 +257,23 @@ async def move_task(
     column = await db.get(BoardColumn, data.column_id)
     if not column or column.project_id != task.project_id:
         raise HTTPException(status_code=400, detail="Invalid destination column")
+    project_setting = await db.get(ProjectSetting, task.project_id)
+    move_values = {
+        "column_id": column.id,
+        "position": data.position,
+        "version": data.version + 1,
+    }
+    if (
+        project_setting is not None
+        and project_setting.auto_complete_on_done_column
+        and column.name.strip().casefold() == "done"
+    ):
+        move_values["status"] = "done"
+        move_values["completed_at"] = datetime.now(UTC)
     result = await db.execute(
         update(Task)
         .where(Task.id == task.id, Task.version == data.version)
-        .values(column_id=column.id, position=data.position, version=data.version + 1)
+        .values(**move_values)
         .returning(Task)
     )
     moved = result.scalar_one_or_none()
