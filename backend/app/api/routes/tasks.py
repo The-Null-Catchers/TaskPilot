@@ -178,7 +178,9 @@ async def create_task(
         title=data.title.strip(),
         description=data.description,
         priority=data.priority,
+        start_date=data.start_date,
         due_date=data.due_date,
+        estimate_minutes=data.estimate_minutes,
         position=(max_position or 0) + 1000,
     )
     db.add(task)
@@ -201,6 +203,10 @@ async def patch_task(
     task = await _task_access(db, task_id, user.id, write=True)
     previous_status = task.status
     values = data.model_dump(exclude={"version"}, exclude_unset=True)
+    next_start = values.get("start_date", task.start_date)
+    next_due = values.get("due_date", task.due_date)
+    if next_start and next_due and next_due < next_start:
+        raise HTTPException(status_code=422, detail="Task due date cannot be before start date")
     for field in ("title", "description", "priority", "status"):
         if values.get(field) is None:
             values.pop(field, None)
