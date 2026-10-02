@@ -233,15 +233,15 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     }
   }
 
-  Future<MutationOutcome> updateTask({required String title, required String description, required String priority, required String status, String? dueDate}) async {
+  Future<MutationOutcome> updateTask({required String title, required String description, required String priority, required String status, String? startDate, String? dueDate, int? estimateMinutes}) async {
     final task = state.task;
     if (task == null) return MutationOutcome.conflict;
-    final data = {'version': task.version, 'title': title, 'description': description, 'priority': priority, 'status': status, 'due_date': dueDate};
+    final data = {'version': task.version, 'title': title, 'description': description, 'priority': priority, 'status': status, 'start_date': startDate, 'due_date': dueDate, 'estimate_minutes': estimateMinutes};
     final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId', data: data, label: 'Update ${task.identifier}');
     if (outcome == MutationOutcome.synced) {
       await load(quiet: true);
     } else {
-      final optimistic = task.copyWith(title: title, description: description, priority: priority, status: status, dueDate: dueDate, clearDueDate: dueDate == null, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
+      final optimistic = task.copyWith(title: title, description: description, priority: priority, status: status, startDate: startDate, clearStartDate: startDate == null, dueDate: dueDate, clearDueDate: dueDate == null, estimateMinutes: estimateMinutes, clearEstimate: estimateMinutes == null, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cached_task_$taskId', jsonEncode(optimistic.toJson()));
       state = _withStatus(task: optimistic, offline: true, pendingSync: outcome == MutationOutcome.queued, conflict: outcome == MutationOutcome.conflict);
