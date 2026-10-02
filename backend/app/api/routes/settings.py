@@ -43,7 +43,19 @@ async def _workspace_setting(db: AsyncSession, workspace_id: UUID) -> WorkspaceS
 async def _project_setting(db: AsyncSession, project_id: UUID) -> ProjectSetting:
     setting = await db.get(ProjectSetting, project_id)
     if setting is None:
-        setting = ProjectSetting(project_id=project_id)
+        project = await db.get(Project, project_id)
+        workspace_setting = (
+            await db.get(WorkspaceSetting, project.workspace_id) if project is not None else None
+        )
+        setting = ProjectSetting(
+            project_id=project_id,
+            default_task_priority=(
+                workspace_setting.default_task_priority if workspace_setting is not None else "none"
+            ),
+            time_tracking_enabled=(
+                workspace_setting.time_tracking_enabled if workspace_setting is not None else True
+            ),
+        )
         db.add(setting)
         await db.commit()
         await db.refresh(setting)
