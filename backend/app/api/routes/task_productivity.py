@@ -24,6 +24,7 @@ from app.productivity_schemas import (
     TimeSummary,
 )
 from app.realtime import publish
+from app.settings_models import ProjectSetting, WorkspaceSetting
 
 router = APIRouter(tags=['task-productivity'])
 
@@ -40,6 +41,17 @@ async def _task_access(
         raise HTTPException(status_code=404, detail='Task not found')
     await require_project(db, task.project_id, user_id, write=write)
     return task
+
+
+async def _require_time_tracking(db: AsyncSession, task: Task) -> None:
+    project_setting = await db.get(ProjectSetting, task.project_id)
+    if project_setting is not None:
+        enabled = project_setting.time_tracking_enabled
+    else:
+        workspace_setting = await db.get(WorkspaceSetting, task.workspace_id)
+        enabled = workspace_setting.time_tracking_enabled if workspace_setting is not None else True
+    if not enabled:
+        raise HTTPException(status_code=409, detail='Time tracking is disabled for this project')
 
 
 def _time_entry_out(entry: TimeEntry) -> TimeEntryOut:
@@ -107,7 +119,8 @@ async def start_timer(
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await _task_access(db, task_id, user.id, write=True)
+    task = await _task_access(db, task_id, user.id, write=True)
+    await _require_time_tracking(db, task)
     running = await db.scalar(
         select(TimeEntry).where(
             TimeEntry.user_id == user.id,
@@ -167,6 +180,7 @@ async def add_manual_time(
     db: AsyncSession = Depends(get_db),
 ):
     task = await _task_access(db, task_id, user.id, write=True)
+    await _require_time_tracking(db, task)
     duration = int((data.ended_at - data.started_at).total_seconds())
     if duration > 60 * 60 * 24 * 31:
         raise HTTPException(
