@@ -2,6 +2,9 @@
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { useAuth } from '@/components/providers'
+import { request } from '@/lib/api'
+
 type ThemeMode='light'|'dark'|'system'
 
 function apply(mode:ThemeMode){
@@ -10,6 +13,7 @@ function apply(mode:ThemeMode){
 }
 
 export function ThemeToggle(){
+  const {token}=useAuth()
   const [mode,setMode]=useState<ThemeMode>('system')
   useEffect(()=>{
     const saved=localStorage.getItem('tp-theme')
@@ -26,6 +30,7 @@ export function ThemeToggle(){
     setMode(next)
     localStorage.setItem('tp-theme',next)
     apply(next)
+    if(token)void request('/api/v1/settings/user',{method:'PATCH',body:JSON.stringify({theme:next})},token).catch(()=>{})
   }
   const label=`Theme: ${mode}. Click to switch.`
   return <button aria-label={label} title={label} onClick={cycle} className="focus-ring rounded-xl border border-[var(--line)] p-2 hover:bg-black/5 dark:hover:bg-white/5">{mode==='light'?<Sun size={18}/>:mode==='dark'?<Moon size={18}/>:<Monitor size={18}/>}</button>
