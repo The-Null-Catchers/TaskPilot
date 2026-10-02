@@ -161,6 +161,8 @@ async def create_task(
     column = await db.get(BoardColumn, data.column_id)
     if not column or column.project_id != project.id:
         raise HTTPException(status_code=400, detail="Column does not belong to project")
+    if data.start_date and data.due_date and data.due_date < data.start_date:
+        raise HTTPException(status_code=422, detail="Task due date cannot be before start date")
     project.task_counter += 1
     max_position = await db.scalar(
         select(func.max(Task.position)).where(
