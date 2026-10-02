@@ -325,7 +325,9 @@ async def duplicate_task(task_id: UUID, data: TaskDuplicateIn, user: User = Depe
         priority=source.priority,
         status="open",
         position=max_position + 1000,
+        start_date=source.start_date,
         due_date=source.due_date,
+        estimate_minutes=source.estimate_minutes,
     )
     db.add(clone)
     await db.flush()
