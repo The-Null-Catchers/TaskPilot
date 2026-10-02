@@ -222,6 +222,10 @@ async def patch_task(
     for field in ("title", "description", "priority", "status"):
         if values.get(field) is None:
             values.pop(field, None)
+    if values.get("status") == "done" and previous_status != "done":
+        values["completed_at"] = datetime.now(UTC)
+    elif "status" in values and values["status"] != "done" and previous_status == "done":
+        values["completed_at"] = None
     values["version"] = data.version + 1
     result = await db.execute(
         update(Task)
@@ -254,6 +258,7 @@ async def move_task(
     db: AsyncSession = Depends(get_db),
 ):
     task = await _task_access(db, task_id, user.id, write=True)
+    previous_status = task.status
     column = await db.get(BoardColumn, data.column_id)
     if not column or column.project_id != task.project_id:
         raise HTTPException(status_code=400, detail="Invalid destination column")
@@ -281,6 +286,8 @@ async def move_task(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Task moved by another collaborator")
     _activity(db, task, user.id, "task.moved", f"Moved {task.identifier} to {column.name}")
+    if previous_status != "done" and moved.status == "done":
+        await _notify_dependency_resolved(db, moved)
     await db.commit()
     await db.refresh(moved)
     payload = TaskOut.model_validate(moved).model_dump(mode="json")
