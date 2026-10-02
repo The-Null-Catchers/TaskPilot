@@ -102,6 +102,24 @@ async def mark_read(
     return notification
 
 
+@router.delete("/{notification_id}", status_code=204)
+async def delete_notification(
+    notification_id: UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    notification = await db.scalar(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == user.id,
+        )
+    )
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    await db.delete(notification)
+    await db.commit()
+
+
 @router.post("/read-all", status_code=204)
 async def mark_all_read(
     user: User = Depends(current_user),
