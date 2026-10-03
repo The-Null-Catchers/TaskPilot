@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { useAuth } from '@/components/providers'
+import { applyUserSettings, useAuth } from '@/components/providers'
 import { request } from '@/lib/api'
 
 type UserSettings={
@@ -17,14 +17,8 @@ type UserSettings={
   updated_at:string
 }
 
-function applyTheme(theme:UserSettings['theme']){
-  localStorage.setItem('tp-theme',theme)
-  const dark=theme==='dark'||(theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark',dark)
-}
-
 export default function PreferencesPage(){
-  const {token,loading}=useAuth()
+  const {token,loading,reloadSettings}=useAuth()
   const router=useRouter()
   const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
@@ -42,7 +36,8 @@ export default function PreferencesPage(){
     },token),
     onSuccess:(data)=>{
       setError('');setNotice('Preferences saved across your TaskPilot devices.')
-      applyTheme(data.theme)
+      applyUserSettings(data)
+      void reloadSettings()
       void settings.refetch()
     },
     onError:(err)=>{setNotice('');setError(err instanceof Error?err.message:'Could not save preferences.')},
@@ -73,7 +68,7 @@ export default function PreferencesPage(){
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       {notice&&<div className="mb-4 rounded-2xl bg-emerald-500/10 p-4 text-sm text-emerald-700 dark:text-emerald-300">{notice}</div>}
       {error&&<div role="alert" className="mb-4 rounded-2xl bg-red-500/10 p-4 text-sm text-red-600">{error}</div>}
-      <form onSubmit={submit} className="panel rounded-2xl p-5 sm:p-6">
+      <form onSubmit={submit} className="panel rounded-2xl p-5 sm:p-6" key={settings.data.updated_at}>
         <div className="flex items-start gap-3"><MonitorCog className="mt-0.5 text-indigo-600"/><div><h2 className="font-semibold">Personal experience</h2><p className="mt-1 text-sm muted">These preferences follow your account instead of being tied to one browser.</p></div></div>
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <label className="text-sm font-medium">Theme<select name="theme" defaultValue={settings.data.theme} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
@@ -81,7 +76,7 @@ export default function PreferencesPage(){
           <label className="text-sm font-medium">Week starts on<select name="week_start" defaultValue={settings.data.week_start} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value={0}>Sunday</option><option value={1}>Monday</option><option value={6}>Saturday</option></select></label>
           <label className="text-sm font-medium">Default landing page<select name="default_home" defaultValue={settings.data.default_home} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5"><option value="home">Projects</option><option value="my_tasks">My Tasks</option><option value="calendar">Calendar</option></select></label>
         </div>
-        <div className="mt-6 flex items-center justify-between gap-4 rounded-xl bg-black/[.025] p-4 dark:bg-white/[.025]"><div className="flex items-center gap-3"><LayoutTemplate size={18}/><p className="text-sm muted">Theme supports Light, Dark, and System as specified by the product design.</p></div><button disabled={save.isPending} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{save.isPending?'Saving…':'Save preferences'}</button></div>
+        <div className="mt-6 flex items-center justify-between gap-4 rounded-xl bg-black/[.025] p-4 dark:bg-white/[.025]"><div className="flex items-center gap-3"><LayoutTemplate size={18}/><p className="text-sm muted">Theme, density, week layout, and landing page apply to the signed-in experience.</p></div><button disabled={save.isPending} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{save.isPending?'Saving…':'Save preferences'}</button></div>
       </form>
     </div>
   </main>
