@@ -1,13 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, ArrowLeft, RotateCcw, Save } from 'lucide-react'
+import { Archive, ArrowLeft, RotateCcw, Save, UserMinus, UserPlus, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { useAuth } from '@/components/providers'
-import { Board, Project, request } from '@/lib/api'
+import { Board, Project, request, WorkspaceMember } from '@/lib/api'
 
 type ProjectPreferences={
   default_task_priority:'urgent'|'high'|'medium'|'low'|'none'
@@ -15,6 +15,14 @@ type ProjectPreferences={
   auto_complete_on_done_column:boolean
   show_completed_tasks:boolean
   updated_at:string
+}
+
+type ProjectMember={
+  user_id:string
+  email:string
+  name:string
+  role:'owner'|'member'|'guest'
+  created_at:string
 }
 
 const statuses = [
@@ -26,11 +34,14 @@ const statuses = [
 
 export default function ProjectSettingsPage(){
   const {projectId}=useParams<{projectId:string}>()
-  const {token,loading}=useAuth()
+  const {user,token,loading}=useAuth()
   const router=useRouter()
   const queryClient=useQueryClient()
   const [notice,setNotice]=useState('')
   const [error,setError]=useState('')
+  const [memberToAdd,setMemberToAdd]=useState('')
+  const [memberRole,setMemberRole]=useState<'member'|'guest'>('member')
+  const [memberBusy,setMemberBusy]=useState('')
 
   useEffect(()=>{if(!loading&&!token)router.replace('/login')},[loading,token,router])
 
@@ -45,6 +56,23 @@ export default function ProjectSettingsPage(){
     queryFn:()=>request<ProjectPreferences>(`/api/v1/projects/${projectId}/settings/preferences`,{},token),
     enabled:!!token&&!!projectId,
   })
+  const projectMembers=useQuery({
+    queryKey:['project-members',projectId],
+    queryFn:()=>request<ProjectMember[]>(`/api/v1/projects/${projectId}/members`,{},token),
+    enabled:!!token&&!!projectId,
+  })
+  const workspaceMembers=useQuery({
+    queryKey:['workspace-members',project?.workspace_id],
+    queryFn:()=>request<WorkspaceMember[]>(`/api/v1/workspaces/${project!.workspace_id}/members`,{},token),
+    enabled:!!token&&!!project?.workspace_id,
+  })
+
+  const actorWorkspaceRole=workspaceMembers.data?.find(member=>member.user_id===user?.id)?.role
+  const canManageMembers=!!project&&!!user&&(project.owner_id===user.id||actorWorkspaceRole==='owner'||actorWorkspaceRole==='admin')
+  const availableMembers=useMemo(()=>{
+    const assigned=new Set(projectMembers.data?.map(member=>member.user_id)??[])
+    return (workspaceMembers.data??[]).filter(member=>!assigned.has(member.user_id))
+  },[projectMembers.data,workspaceMembers.data])
 
   const save=useMutation({
     mutationFn:(payload:Record<string,unknown>)=>request<Project>(`/api/v1/projects/${projectId}`,{
@@ -96,6 +124,45 @@ export default function ProjectSettingsPage(){
       auto_complete_on_done_column:data.get('auto_complete_on_done_column')==='on',
       show_completed_tasks:data.get('show_completed_tasks')==='on',
     }).catch(()=>undefined)
+  }
+
+  async function addMember(){
+    if(!memberToAdd||!canManageMembers)return
+    setMemberBusy(`add:${memberToAdd}`);setError('');setNotice('')
+    try{
+      await request<ProjectMember>(`/api/v1/projects/${projectId}/members`,{
+        method:'POST',
+        body:JSON.stringify({user_id:memberToAdd,role:memberRole}),
+      },token)
+      setMemberToAdd('');setMemberRole('member');setNotice('Project member added.')
+      await projectMembers.refetch()
+    }catch(err){setError(err instanceof Error?err.message:'Could not add project member.')}
+    finally{setMemberBusy('')}
+  }
+
+  async function changeMemberRole(member:ProjectMember,role:'member'|'guest'){
+    if(!canManageMembers||member.role==='owner')return
+    setMemberBusy(`role:${member.user_id}`);setError('');setNotice('')
+    try{
+      await request<ProjectMember>(`/api/v1/projects/${projectId}/members`,{
+        method:'POST',
+        body:JSON.stringify({user_id:member.user_id,role}),
+      },token)
+      setNotice(`${member.name}'s project role was updated.`)
+      await projectMembers.refetch()
+    }catch(err){setError(err instanceof Error?err.message:'Could not update project member.')}
+    finally{setMemberBusy('')}
+  }
+
+  async function removeMember(member:ProjectMember){
+    if(!canManageMembers||member.role==='owner'||!confirm(`Remove ${member.name} from this project?`))return
+    setMemberBusy(`remove:${member.user_id}`);setError('');setNotice('')
+    try{
+      await request<void>(`/api/v1/projects/${projectId}/members/${member.user_id}`,{method:'DELETE'},token)
+      setNotice(`${member.name} was removed from this project.`)
+      await projectMembers.refetch()
+    }catch(err){setError(err instanceof Error?err.message:'Could not remove project member.')}
+    finally{setMemberBusy('')}
   }
 
   async function archive(){
@@ -152,6 +219,13 @@ export default function ProjectSettingsPage(){
         </div>
         {!archived&&<div className="mt-6 flex justify-end"><button disabled={save.isPending} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"><Save size={16}/>{save.isPending?'Saving…':'Save changes'}</button></div>}
       </form>
+
+      <section className="panel rounded-2xl p-5 sm:p-6">
+        <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-500/10 text-indigo-600"><Users size={19}/></span><div><h2 className="text-lg font-semibold">Project members</h2><p className="mt-1 text-sm muted">Project membership controls guest visibility and project-specific access. Members must already belong to the workspace.</p></div></div>
+        {projectMembers.isLoading?<p className="mt-5 text-sm muted">Loading project members…</p>:<div className="mt-5 divide-y divide-[var(--line)]">{projectMembers.data?.map(member=><div key={member.user_id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="truncate font-medium">{member.name}</p><p className="truncate text-sm muted">{member.email}</p></div><div className="flex items-center gap-2">{member.role==='owner'?<span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-medium">Owner</span>:canManageMembers&&!archived?<><select value={member.role} disabled={!!memberBusy} onChange={event=>void changeMemberRole(member,event.target.value as 'member'|'guest')} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm"><option value="member">Member</option><option value="guest">Guest</option></select><button disabled={!!memberBusy} onClick={()=>void removeMember(member)} className="rounded-xl border border-red-500/20 p-2 text-red-600 disabled:opacity-40" aria-label={`Remove ${member.name}`}><UserMinus size={16}/></button></>:<span className="rounded-full border border-[var(--line)] px-3 py-1.5 text-xs muted">{member.role==='guest'?'Guest':'Member'}</span>}</div></div>)}</div>}
+        {canManageMembers&&!archived&&<div className="mt-5 grid gap-3 rounded-xl border border-[var(--line)] p-4 sm:grid-cols-[1fr_140px_auto]"><select value={memberToAdd} onChange={event=>setMemberToAdd(event.target.value)} className="min-w-0 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm"><option value="">Select workspace member…</option>{availableMembers.map(member=><option key={member.user_id} value={member.user_id}>{member.name} · {member.email}</option>)}</select><select value={memberRole} onChange={event=>setMemberRole(event.target.value as 'member'|'guest')} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-2.5 text-sm"><option value="member">Member</option><option value="guest">Guest</option></select><button type="button" onClick={()=>void addMember()} disabled={!memberToAdd||!!memberBusy} className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40"><UserPlus size={16}/>Add member</button></div>}
+        {canManageMembers&&availableMembers.length===0&&!projectMembers.isLoading&&<p className="mt-4 text-xs muted">Every active workspace member is already assigned to this project.</p>}
+      </section>
 
       {preferences.data&&<form onSubmit={submitPreferences} className="panel rounded-2xl p-5 sm:p-6">
         <div><h2 className="text-lg font-semibold">Project defaults</h2><p className="mt-1 text-sm muted">Control defaults and behavior that apply specifically to this project.</p></div>
