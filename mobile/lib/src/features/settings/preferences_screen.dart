@@ -152,12 +152,12 @@ class _PreferencesScreenState extends ConsumerState<PreferencesScreen> {
                               weekStart: _weekStart,
                               defaultHome: _defaultHome,
                             );
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Preferences saved.')),
                         );
                       } catch (_) {
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Could not save preferences.')),
                         );
