@@ -62,7 +62,16 @@ class HomeScreen extends ConsumerWidget {
             ],
           ),
           IconButton(onPressed: () => context.push('/notifications'), icon: const Icon(Icons.notifications_none_rounded), tooltip: 'Notifications'),
-          IconButton(onPressed: () => context.push('/settings/account'), icon: const Icon(Icons.account_circle_outlined), tooltip: 'Profile & settings'),
+          PopupMenuButton<String>(
+            tooltip: 'Settings',
+            icon: const Icon(Icons.settings_outlined),
+            onSelected: (value) => context.push(value),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: '/settings/account', child: ListTile(leading: Icon(Icons.account_circle_outlined), title: Text('Account & profile'))),
+              PopupMenuItem(value: '/settings/preferences', child: ListTile(leading: Icon(Icons.tune_rounded), title: Text('Preferences'))),
+              PopupMenuItem(value: '/settings/notifications', child: ListTile(leading: Icon(Icons.notifications_active_outlined), title: Text('Notification settings'))),
+            ],
+          ),
           IconButton(onPressed: () async { await ref.read(offlineQueueProvider.notifier).sync(); await ref.read(homeProvider.notifier).load(); }, icon: const Icon(Icons.refresh_rounded), tooltip: 'Refresh & sync'),
           IconButton(onPressed: () => ref.read(authProvider.notifier).logout(), icon: const Icon(Icons.logout_rounded), tooltip: 'Sign out'),
         ],
