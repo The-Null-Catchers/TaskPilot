@@ -4,7 +4,7 @@ This document records factual evidence for the current TaskPilot release candida
 
 ## Release candidate
 
-- Application release commit reviewed: `ef62b239c3676c5f577c0b026ff02656e25f3b72`
+- Latest `main` application/operations commit reviewed before this evidence-only refresh: `ab829b808bd8f3070ed6cae1240e45bd2e743f36`
 - Branch: `main`
 - Review date: 2026-10-04 UTC
 - Hosted demo/staging services:
@@ -18,18 +18,18 @@ The release-evidence document can be updated after the application release commi
 Repository cleanup is complete for the temporary Android build branch:
 
 - `build/render-test-apk` is no longer present.
-- At the start of this review the product branches were `main` plus the short-lived `feat/mobile-milestone-management` branch for open PR #122.
-- PR #122 is product/parity work and is not required by this release-validation checklist.
+- Current branches are `main` plus the short-lived `feat/mobile-milestone-management` branch for open PR #122.
+- PR #122 is product/parity work and is not required by this release-validation checklist, so it was not merged as part of this review.
 
 The former temporary build branch contained no unique product code, as recorded by the earlier release review.
 
 ## Current-main CI
 
-The exact application release commit passed the full repository gate:
+The latest reviewed `main` commit passed the full repository gate:
 
 - Workflow: **TaskPilot CI**
-- Run: https://github.com/The-Null-Catchers/TaskPilot/actions/runs/37164377506
-- Commit: `ef62b239c3676c5f577c0b026ff02656e25f3b72`
+- Run: https://github.com/The-Null-Catchers/TaskPilot/actions/runs/37200089575
+- Commit: `ab829b808bd8f3070ed6cae1240e45bd2e743f36`
 - Result: success
 - Date: 2026-10-04 UTC
 
@@ -45,8 +45,6 @@ Jobs verified green:
 - backend production Docker image build
 - web production Docker image build
 
-The documentation refresh in PR #123 also passed the same full CI matrix in run https://github.com/The-Null-Catchers/TaskPilot/actions/runs/37168773652.
-
 The regular Android CI build still uses a placeholder API target and is a contributor/test artifact. It is not evidence of the production-signed Android release.
 
 ## Hosted deployment state
@@ -54,13 +52,12 @@ The regular Android CI build still uses a placeholder API target and is a contri
 Render control-plane inspection on 2026-10-04 found:
 
 - `taskpilot-web-test` is active, auto-deploying from `main`, region Frankfurt.
-- The live web deploy is commit `ef62b239c3676c5f577c0b026ff02656e25f3b72`.
+- The currently live web deploy is application commit `ef62b239c3676c5f577c0b026ff02656e25f3b72`; later commits inspected during this release review did not produce a newer web deploy through Render's path-aware behavior.
 - `taskpilot-api-test` is active, auto-deploying from `main`, region Frankfurt.
-- The latest API deploy is commit `ef967836af2e86b8437decb03cc7fe82cba70b72`; later commits did not require a backend deploy through the service's path-aware auto-deploy behavior.
+- The latest API deploy remains application commit `ef967836af2e86b8437decb03cc7fe82cba70b72`; later commits did not require a backend deploy through the service's path-aware auto-deploy behavior.
 - Hosted PostgreSQL `taskpilot-db-test` is available on PostgreSQL 17.
 - Hosted Redis `taskpilot-redis-test` is available in Frankfurt.
-- The live database Alembic revision is `0016_product_settings`.
-- A read-only live database count check returned 23 users, 30 workspaces, 11 projects, and 22 tasks.
+- A prior read-only live database check recorded Alembic revision `0016_product_settings` and non-empty application data.
 
 These checks establish that the expected Render resources and persisted application data exist. They do not replace the guarded browser smoke suite.
 
@@ -79,7 +76,7 @@ The most recent recorded guarded hosted-environment smoke remains:
 
 That run exercised registration/onboarding, project/task creation, invitations, permissions, collaboration, notifications, realtime updates, optimistic conflicts, archive/restore, saved views, and the hosted attachment upload/download/authorization/delete path.
 
-A fresh smoke run against the current 2026-10-04 release commit has **not** yet been recorded. This remains a release-validation blocker.
+A fresh smoke run against the current release window has **not** yet been recorded. This remains a release-validation blocker.
 
 ## Workers and scheduled jobs
 
@@ -88,7 +85,7 @@ Repository production configuration defines:
 - Celery worker: `celery -A app.worker.celery worker --loglevel=INFO`
 - Celery Beat: `celery -A app.worker.celery beat --loglevel=INFO`
 
-Render control-plane inspection found **no TaskPilot worker service and no TaskPilot Beat service**. Only the TaskPilot web and API services are currently deployed.
+Render control-plane inspection on 2026-10-04 again found **no TaskPilot worker service and no TaskPilot Beat service**. Only the TaskPilot web and API services are deployed.
 
 Therefore the hosted worker/Beat requirement is not merely missing evidence: the current Render staging/demo environment does not contain those processes. The following are unverified and currently unavailable on this environment:
 
@@ -111,9 +108,14 @@ Implemented and CI-validated:
 - secure Firebase client configuration injection support
 - optional Google Play internal-track upload path
 
+Current external evidence:
+
+- The latest signed-release run found during this review is https://github.com/The-Null-Catchers/TaskPilot/actions/runs/35602021813 on commit `371b8263d68991d12d139ea433c5c9f33de52b1d`.
+- That run concluded **failure** and therefore is not production-signed release evidence.
+
 Not yet evidenced:
 
-- a successful production-signed Android workflow run
+- a successful production-signed Android workflow run with real signing secrets
 - production artifact name/version/build/commit evidence
 - installation on a physical Android device
 - physical-device offline/reconnect/conflict/session-expiry/Sync Center validation
@@ -142,7 +144,7 @@ These remain externally blocked until Apple credentials and a physical iPhone ar
 
 Repository implementation and CI validation exist for Prometheus, Grafana, Loki, Alertmanager, PostgreSQL exporter, Redis exporter, blackbox monitoring, and associated configuration.
 
-Render metrics were queried for the hosted API during this review, but no time-series samples were returned in the inspected window. No dedicated TaskPilot Prometheus/Grafana/Loki/Alertmanager services are present in the connected Render workspace.
+No dedicated TaskPilot Prometheus/Grafana/Loki/Alertmanager services are present in the connected Render workspace.
 
 Still required for a production observability claim:
 
@@ -177,7 +179,7 @@ Never run destructive restore testing against important live data.
 
 The repository includes realistic Northstar demo data and a seeder intended for portfolio/demo use.
 
-The connected Render database contains non-empty application data, but this review has not established that the public environment is the intended polished Northstar portfolio dataset.
+The connected Render database has previously been confirmed non-empty, but this review has not established that the public environment is the intended polished Northstar portfolio dataset.
 
 Still not evidenced as complete:
 
@@ -193,7 +195,7 @@ Render control-plane verification on 2026-10-04 established:
 
 - Redis has no public IP allow-list entries and is not exposed through a public Render web service.
 - Web and API are public HTTPS Render services, as expected for the demo/staging application.
-- PostgreSQL currently has an IP allow-list entry of `0.0.0.0/0` (`everywhere`). This fails the release requirement that PostgreSQL be private/restricted and must be corrected before claiming production-safe live configuration.
+- PostgreSQL `taskpilot-db-test` currently has an IP allow-list entry of `0.0.0.0/0` (`everywhere`). This fails the release requirement that PostgreSQL be private/restricted and must be corrected before claiming production-safe live configuration.
 
 Still requiring direct verification or remediation:
 
@@ -226,7 +228,7 @@ No project license has been selected. This remains an explicit owner decision. D
 
 Before calling TaskPilot fully release/portfolio validated, complete or explicitly accept the following external/manual items:
 
-- rerun guarded deployment smoke against the final release commit
+- rerun guarded deployment smoke against the final release window
 - deploy a real Celery worker and exactly one Beat process to the hosted environment
 - exercise and observe at least one hosted worker-backed job
 - restrict hosted PostgreSQL network access
