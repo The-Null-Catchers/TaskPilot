@@ -1,0 +1,84 @@
+services:
+  - type: worker
+    name: taskpilot-worker-test
+    runtime: python
+    region: frankfurt
+    rootDir: backend
+    branch: main
+    buildCommand: pip install .
+    startCommand: celery -A app.worker.celery worker --loglevel=INFO --concurrency=2
+    numInstances: 1
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: JWT_SECRET
+      - key: APP_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: APP_URL
+      - key: API_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: API_URL
+      - key: APP_ENV
+        value: staging
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_JSON
+        value: "true"
+
+  - type: worker
+    name: taskpilot-beat-test
+    runtime: python
+    region: frankfurt
+    rootDir: backend
+    branch: main
+    buildCommand: pip install .
+    startCommand: celery -A app.worker.celery beat --loglevel=INFO
+    numInstances: 1
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: REDIS_URL
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: JWT_SECRET
+      - key: APP_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: APP_URL
+      - key: API_URL
+        fromService:
+          type: web
+          name: taskpilot-api-test
+          envVarKey: API_URL
+      - key: APP_ENV
+        value: staging
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_JSON
+        value: "true"
