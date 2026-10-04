@@ -35,14 +35,18 @@ if [[ "${DATABASE_URL:-}" == *"CHANGE_ME"* ]]; then
   exit 1
 fi
 
-for port in "${WEB_PORT:-3200}" "${API_PORT:-8200}" "${MINIO_API_PORT:-9200}" "${MINIO_CONSOLE_PORT:-9201}"; do
-  if ss -H -ltn "sport = :$port" | grep -q .; then
-    echo "Refusing deployment: TCP port $port is already in use." >&2
-    exit 1
-  fi
-done
-
 compose=(docker compose --project-name "$PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+# Only treat occupied host ports as a collision on the first deployment. During
+# an update the existing TaskPilot stack legitimately owns these listeners.
+if ! "${compose[@]}" ps -q | grep -q .; then
+  for port in "${WEB_PORT:-3200}" "${API_PORT:-8200}" "${MINIO_API_PORT:-9200}" "${MINIO_CONSOLE_PORT:-9201}"; do
+    if ss -H -ltn "sport = :$port" | grep -q .; then
+      echo "Refusing first deployment: TCP port $port is already in use." >&2
+      exit 1
+    fi
+  done
+fi
 
 printf '\n==> Validating Compose configuration\n'
 "${compose[@]}" config >/dev/null
@@ -71,7 +75,7 @@ if ! curl -fsS "http://127.0.0.1:${api_port}/health/ready" >/tmp/taskpilot-healt
   exit 1
 fi
 
-running_services="$(${compose[@]} ps --status running --services)"
+running_services="$("${compose[@]}" ps --status running --services)"
 for svc in backend web worker beat postgres redis minio; do
   if ! grep -qx "$svc" <<<"$running_services"; then
     echo "Expected service '$svc' is not running." >&2
@@ -80,7 +84,7 @@ for svc in backend web worker beat postgres redis minio; do
   fi
 done
 
-beat_count="$(${compose[@]} ps --status running --services beat | wc -l | tr -d ' ')"
+beat_count="$("${compose[@]}" ps --status running --services beat | wc -l | tr -d ' ')"
 if [[ "$beat_count" != "1" ]]; then
   echo "Expected exactly one running Beat service, found $beat_count." >&2
   exit 1
