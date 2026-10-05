@@ -18,7 +18,7 @@ dependencies:
   file_picker: ^10.3.3
   firebase_core: ^4.15.0
   firebase_messaging: ^16.7.0
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
