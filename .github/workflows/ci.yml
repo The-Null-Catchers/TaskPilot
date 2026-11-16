@@ -70,7 +70,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - run: npm install
+      - run: npm ci
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
@@ -161,7 +161,7 @@ jobs:
           node-version: '22'
       - name: Install web dependencies
         working-directory: web
-        run: npm install
+        run: npm ci
       - name: Install Chromium
         working-directory: web
         run: npx playwright install --with-deps chromium
@@ -188,6 +188,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.6'
           cache: true
       - name: Generate Android host project without overwriting app sources
         run: |
@@ -218,6 +219,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.6'
           cache: true
       - name: Generate iOS host project without overwriting app sources
         run: |
