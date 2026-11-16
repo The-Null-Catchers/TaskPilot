@@ -1,0 +1,32 @@
+{
+  "repository": "The-Null-Catchers/TaskPilot",
+  "defaultBranch": "main",
+  "baseSHA": "034d9047b57b02b5f85f9b26506847758135d3c1",
+  "backupTag": "cleanup-backup-2026-11-16",
+  "delete": [
+    {
+      "name": "dependabot/npm_and_yarn/web/tailwindcss-4.3.5",
+      "sha": "dc6ffcdfd5d73cc7f75a146cbe27c4c9c9a23198",
+      "reason": "rejected-dependabot-major",
+      "pullRequest": 130
+    },
+    {
+      "name": "dependabot/pub/mobile/flutter_riverpod-3.5.0",
+      "sha": "2a565a342f5fb18aa7a6ce12ca5824efc706ef59",
+      "reason": "rejected-dependabot-major",
+      "pullRequest": 131
+    },
+    {
+      "name": "maintenance/repo-hygiene-20261116",
+      "sha": "92b0448e911e56661752ab1aa3b447b86f675b16",
+      "reason": "merged-cleanup-pr",
+      "requiresMergedPullRequest": 132
+    }
+  ],
+  "status": "Explicitly approved: archive before lease-guarded deletion",
+  "archiveParents": [
+    "dc6ffcdfd5d73cc7f75a146cbe27c4c9c9a23198",
+    "2a565a342f5fb18aa7a6ce12ca5824efc706ef59",
+    "92b0448e911e56661752ab1aa3b447b86f675b16"
+  ]
+}
