@@ -15,6 +15,7 @@ class ProjectInsightsScreen extends ConsumerStatefulWidget {
 class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabs;
   bool _loading = true;
+  bool _mutatingMilestone = false;
   String? _error;
   Map<String, dynamic>? _overview;
   Map<String, dynamic>? _timeline;
@@ -57,6 +58,124 @@ class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> w
 
   List<Map<String, dynamic>> _list(Map<String, dynamic>? source, String key) =>
       ((source?[key] as List?) ?? const []).map((item) => (item as Map).cast<String, dynamic>()).toList();
+
+  Future<void> _showMilestoneEditor({Map<String, dynamic>? milestone}) async {
+    final title = TextEditingController(text: milestone?['title']?.toString() ?? '');
+    final description = TextEditingController(text: milestone?['description']?.toString() ?? '');
+    DateTime dueAt = DateTime.tryParse(milestone?['due_date']?.toString() ?? '')?.toLocal() ?? DateTime.now().add(const Duration(days: 7));
+    final formKey = GlobalKey<FormState>();
+
+    final shouldSave = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(20, 20, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+          child: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(milestone == null ? 'New milestone' : 'Edit milestone', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 18),
+                  TextFormField(
+                    controller: title,
+                    autofocus: milestone == null,
+                    maxLength: 180,
+                    decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder()),
+                    validator: (value) => value == null || value.trim().isEmpty ? 'Title is required' : null,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: description,
+                    maxLines: 4,
+                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 14),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.event_rounded),
+                    title: const Text('Due date'),
+                    subtitle: Text(_dateTime(dueAt)),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () async {
+                      final date = await showDatePicker(context: context, initialDate: dueAt, firstDate: DateTime(2000), lastDate: DateTime(2100));
+                      if (date == null || !context.mounted) return;
+                      final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(dueAt));
+                      if (time == null) return;
+                      setSheetState(() => dueAt = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        if (formKey.currentState?.validate() != true) return;
+                        Navigator.of(sheetContext).pop(true);
+                      },
+                      icon: const Icon(Icons.save_rounded),
+                      label: Text(milestone == null ? 'Create milestone' : 'Save milestone'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (shouldSave != true || !mounted) return;
+    await _runMilestoneMutation(() async {
+      final body = {
+        'title': title.text.trim(),
+        'description': description.text.trim(),
+        'due_date': dueAt.toUtc().toIso8601String(),
+      };
+      if (milestone == null) {
+        await ref.read(apiProvider).dio.post('/api/v1/projects/${widget.projectId}/milestones', data: body);
+      } else {
+        await ref.read(apiProvider).dio.patch('/api/v1/projects/${widget.projectId}/milestones/${milestone['id']}', data: body);
+      }
+    });
+  }
+
+  Future<void> _setMilestoneStatus(Map<String, dynamic> milestone, String status) => _runMilestoneMutation(() =>
+      ref.read(apiProvider).dio.patch('/api/v1/projects/${widget.projectId}/milestones/${milestone['id']}', data: {'status': status}));
+
+  Future<void> _deleteMilestone(Map<String, dynamic> milestone) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete milestone?'),
+        content: Text('“${milestone['title']}” will be removed from the project timeline and calendar.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _runMilestoneMutation(() => ref.read(apiProvider).dio.delete('/api/v1/projects/${widget.projectId}/milestones/${milestone['id']}'));
+  }
+
+  Future<void> _runMilestoneMutation(Future<dynamic> Function() action) async {
+    if (_mutatingMilestone) return;
+    setState(() => _mutatingMilestone = true);
+    try {
+      await action();
+      await _load();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Milestone updated.')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not update milestone. Check your permissions and try again.')));
+    } finally {
+      if (mounted) setState(() => _mutatingMilestone = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,11 +236,7 @@ class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> w
         _section(context, 'Upcoming', upcoming.map(_taskTile)),
         _section(context, 'Overdue', overdue.map(_taskTile)),
         _section(context, 'Recently completed', completed.map(_taskTile)),
-        _section(context, 'Milestones', milestones.map((item) => ListTile(
-              leading: Icon(item['status'] == 'completed' ? Icons.flag_circle_rounded : Icons.flag_outlined),
-              title: Text(item['title'] as String),
-              subtitle: Text('Due ${_date(item['due_date'])} · ${item['status']}'),
-            ))),
+        _milestonesSection(context, milestones),
         _section(context, 'Members', members.map((item) => ListTile(
               leading: CircleAvatar(child: Text(((item['name'] as String?) ?? '?').substring(0, 1).toUpperCase())),
               title: Text(item['name'] as String),
@@ -133,6 +248,49 @@ class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> w
               subtitle: Text('${item['action']} · ${_date(item['created_at'])}'),
             ))),
       ],
+    );
+  }
+
+  Widget _milestonesSection(BuildContext context, List<Map<String, dynamic>> milestones) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 22),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          child: Row(children: [
+            Expanded(child: Text('Milestones', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800))),
+            IconButton(onPressed: _mutatingMilestone ? null : () => _showMilestoneEditor(), icon: const Icon(Icons.add_circle_outline_rounded), tooltip: 'Add milestone'),
+          ]),
+        ),
+        Card(
+          elevation: 0,
+          clipBehavior: Clip.antiAlias,
+          child: milestones.isEmpty
+              ? const Padding(padding: EdgeInsets.all(22), child: Center(child: Text('No milestones yet.')))
+              : Column(children: milestones.map((item) {
+                  final completed = item['status'] == 'completed';
+                  return ListTile(
+                    leading: Icon(completed ? Icons.flag_circle_rounded : Icons.flag_outlined),
+                    title: Text(item['title'] as String),
+                    subtitle: Text('Due ${_date(item['due_date'])} · ${item['status']}'),
+                    onTap: _mutatingMilestone ? null : () => _showMilestoneEditor(milestone: item),
+                    trailing: PopupMenuButton<String>(
+                      enabled: !_mutatingMilestone,
+                      onSelected: (value) {
+                        if (value == 'edit') _showMilestoneEditor(milestone: item);
+                        if (value == 'status') _setMilestoneStatus(item, completed ? 'open' : 'completed');
+                        if (value == 'delete') _deleteMilestone(item);
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(value: 'status', child: Text(completed ? 'Reopen' : 'Mark complete')),
+                        const PopupMenuItem(value: 'delete', child: Text('Delete')),
+                      ],
+                    ),
+                  );
+                }).toList()),
+        ),
+      ]),
     );
   }
 
@@ -196,6 +354,8 @@ class _ProjectInsightsScreenState extends ConsumerState<ProjectInsightsScreen> w
     final local = parsed.toLocal();
     return '${local.day}/${local.month}/${local.year}';
   }
+
+  static String _dateTime(DateTime value) => '${value.day}/${value.month}/${value.year} · ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 }
 
 class _Metric extends StatelessWidget {
