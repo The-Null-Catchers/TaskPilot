@@ -27,7 +27,8 @@ concurrency:
 jobs:
   smoke:
     name: Remote deployment smoke
-    runs-on: ubuntu-latest
+    # Keep the pinned Playwright browser compatible with the runner OS.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       E2E_BASE_URL: ${{ inputs.web_url }}
