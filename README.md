@@ -371,3 +371,10 @@ TaskPilot demonstrates a realistic SaaS architecture across backend, responsive 
 ## License
 
 No license has been selected yet.
+
+## Reproducible Flutter toolchain
+
+CI uses Flutter 3.47.6, the SDK from the last verified successful mobile
+run. Keep checks and release builds on that same version. Upgrade the SDK in a
+separate change with analyzer/tests and Android/iOS build validation; following
+the moving `stable` channel can introduce new diagnostics without a source change.
