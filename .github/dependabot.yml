@@ -23,6 +23,10 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      # Tailwind 4 needs a coordinated CSS/PostCSS migration.
+      - dependency-name: "tailwindcss"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: pip
     directory: /backend
@@ -51,6 +55,11 @@ updates:
         update-types:
           - minor
           - patch
+    # Riverpod 3 removes APIs still used by the mobile client.
+    ignore:
+      - dependency-name: "flutter_riverpod"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: github-actions
     directory: /
