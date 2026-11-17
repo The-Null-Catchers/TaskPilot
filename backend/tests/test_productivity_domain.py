@@ -44,6 +44,30 @@ def test_manual_time_entry_requires_forward_time_range():
     assert entry.ended_at > entry.started_at
 
 
+@pytest.mark.parametrize(
+    ('started_at', 'ended_at'),
+    [
+        ('2026-11-17T10:00:00', '2026-11-17T11:00:00'),
+        ('2026-11-17T10:00:00', '2026-11-17T11:00:00Z'),
+        ('2026-11-17T10:00:00Z', '2026-11-17T11:00:00'),
+    ],
+)
+def test_manual_time_entry_requires_timezone_on_both_timestamps(started_at, ended_at):
+    with pytest.raises(ValidationError):
+        TimeEntryManual(started_at=started_at, ended_at=ended_at)
+
+
+def test_manual_time_entry_compares_instants_across_timezones():
+    entry = TimeEntryManual(
+        started_at='2026-11-17T12:00:00+02:00',
+        ended_at='2026-11-17T11:00:00Z',
+    )
+    assert (entry.ended_at - entry.started_at).total_seconds() == 3600
+    for ended_at in ('2026-11-17T12:00:00+02:00', '2026-11-17T11:00:00+02:00'):
+        with pytest.raises(ValidationError):
+            TimeEntryManual(started_at='2026-11-17T10:00:00Z', ended_at=ended_at)
+
+
 def test_saved_view_has_productivity_defaults():
     view = SavedViewCreate(
         workspace_id=uuid4(),

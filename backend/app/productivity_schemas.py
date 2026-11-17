@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
 
 from app.schemas import ORMModel, TaskOut
 
@@ -80,8 +80,8 @@ class RecentItemOut(ORMModel):
 
 
 class TimeEntryManual(BaseModel):
-    started_at: datetime
-    ended_at: datetime
+    started_at: AwareDatetime
+    ended_at: AwareDatetime
     note: str = Field(default="", max_length=500)
 
     @model_validator(mode="after")
