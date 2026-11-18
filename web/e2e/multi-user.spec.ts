@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test'
+import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test'
 
 const API = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000/api/v1'
 const PASSWORD = 'TaskPilot-E2E-2026!'
@@ -25,11 +25,22 @@ async function expectStatus(response: APIResponse, status: number) {
   return response
 }
 
+async function openBoard(page: Page, auth: Auth, workspaceName: string, projectName: string) {
+  await page.goto('/login')
+  await page.getByLabel('Email').fill(auth.user.email)
+  await page.getByLabel('Password').fill(PASSWORD)
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await page.getByLabel('Workspace', { exact: true }).selectOption({ label: workspaceName })
+  await page.getByRole('button', { name: projectName, exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Board', exact: true })).toBeVisible()
+}
+
 test.describe.serial('multi-user collaboration', () => {
   test.setTimeout(120_000)
 
   test('covers invitations, permissions, collaboration, realtime, archive, and saved views', async ({
     page,
+    browser,
     request,
   }, testInfo) => {
     const run = process.env.GITHUB_RUN_ID
@@ -187,69 +198,53 @@ test.describe.serial('multi-user collaboration', () => {
       ]),
     )
 
-    // Establish a real browser-origin WebSocket and trigger a REST mutation from the browser.
-    await page.goto('/login')
-    const realtimeEvent = await page.evaluate(
-      async ({ api, workspaceId, taskId, token, columnId, version }) => {
-        return await new Promise<{ event: string; payload: { id?: string } }>((resolve, reject) => {
-          const apiUrl = new URL(api)
-          const socketProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-          const socket = new WebSocket(
-            `${socketProtocol}//${apiUrl.host}/api/v1/ws/workspaces/${workspaceId}`,
-          )
-          const timer = window.setTimeout(() => {
-            socket.close()
-            reject(new Error('Timed out waiting for task.moved realtime event'))
-          }, 12_000)
+    const actorContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL })
+    try {
+      const actor = await actorContext.newPage()
+      await openBoard(page, a, workspace.name, project.name)
+      const taskTitle = task.title as string
+      await page.getByRole('button', { name: taskTitle, exact: true }).click()
+      const draft = page.getByRole('textbox', { name: 'Task title' })
+      await draft.fill('A draft based on the previous version')
 
-          socket.onerror = () => {
-            window.clearTimeout(timer)
-            reject(new Error('WebSocket failed'))
-          }
+      await openBoard(actor, b, workspace.name, project.name)
+      const drag = actor.getByRole('button', { name: `Drag ${task.identifier}` })
+      const destination = actor.getByRole('region', { name: board.columns[1].name, exact: true })
+      await drag.scrollIntoViewIfNeeded()
+      await destination.scrollIntoViewIfNeeded()
+      const handle = await drag.boundingBox()
+      const target = await destination.boundingBox()
+      if (!handle || !target) throw new Error('Task or destination column is missing')
+      const moved = actor.waitForResponse(response =>
+        response.url().endsWith(`/tasks/${task.id}/move`) && response.request().method() === 'POST',
+      )
+      await actor.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+      await actor.mouse.down()
+      await actor.mouse.move(target.x + target.width / 2, target.y + 100, { steps: 18 })
+      await actor.mouse.up()
+      expect((await moved).ok()).toBeTruthy()
+      await expect(destination.getByRole('heading', { name: taskTitle })).toBeVisible()
 
-          socket.onmessage = (message) => {
-            const event = JSON.parse(message.data)
-            if (event.event === 'task.moved' && event.payload?.id === taskId) {
-              window.clearTimeout(timer)
-              socket.close()
-              resolve(event)
-            }
-          }
+      // The owner never reloads. Only the board's socket can move this card.
+      const observed = page.getByRole('region', { name: board.columns[1].name, exact: true })
+      await expect(observed.getByRole('heading', { name: taskTitle })).toBeAttached()
+      await actor.screenshot({ path: testInfo.outputPath('portfolio-realtime-board.png') })
 
-          socket.onopen = () => {
-            socket.send(JSON.stringify({ type: 'auth', token }))
-            window.setTimeout(async () => {
-              const response = await fetch(`${api}/tasks/${taskId}/move`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  column_id: columnId,
-                  position: 1000,
-                  version,
-                }),
-              })
-              if (!response.ok) {
-                window.clearTimeout(timer)
-                socket.close()
-                reject(new Error(`Move failed: ${response.status} ${await response.text()}`))
-              }
-            }, 350)
-          }
-        })
-      },
-      {
-        api: API,
-        workspaceId: workspace.id,
-        taskId: task.id,
-        token: b.access_token,
-        columnId: board.columns[1].id,
-        version: task.version,
-      },
-    )
-    expect(realtimeEvent.event).toBe('task.moved')
+      const rejected = page.waitForResponse(response =>
+        response.url().endsWith(`/tasks/${task.id}`) && response.request().method() === 'PATCH',
+      )
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+      expect((await rejected).status()).toBe(409)
+      await expect(page.getByRole('alert')).toContainText('Task was changed by another collaborator')
+      await expect(draft).toHaveValue('A draft based on the previous version')
+      await page.screenshot({ path: testInfo.outputPath('portfolio-version-conflict.png') })
+
+      await page.getByRole('button', { name: 'Close task' }).click()
+      await observed.getByRole('button', { name: taskTitle, exact: true }).click()
+      await expect(page.getByRole('textbox', { name: 'Task title' })).toHaveValue(taskTitle)
+    } finally {
+      await actorContext.close()
+    }
 
     const taskAfterMoveResponse = await request.get(`${API}/tasks/${task.id}`, {
       headers: authHeaders(a),

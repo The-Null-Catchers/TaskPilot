@@ -30,7 +30,7 @@ function ColumnBox({
  id,name,tasks,index,total,onAdd,onOpen,onRename,onDelete,onMove,
 }:{id:string;name:string;tasks:Task[];index:number;total:number;onAdd:()=>void;onOpen:(task:Task)=>void;onRename:()=>void;onDelete:()=>void;onMove:(direction:-1|1)=>void}){
  const {setNodeRef,isOver}=useDroppable({id})
- return <section ref={setNodeRef} className={`min-h-[360px] w-[290px] shrink-0 rounded-2xl border border-[var(--line)] bg-black/[.025] p-3 dark:bg-white/[.025] ${isOver?'ring-2 ring-indigo-500/30':''}`}>
+ return <section ref={setNodeRef} aria-label={name} className={`min-h-[360px] w-[290px] shrink-0 rounded-2xl border border-[var(--line)] bg-black/[.025] p-3 dark:bg-white/[.025] ${isOver?'ring-2 ring-indigo-500/30':''}`}>
    <div className="mb-3 flex items-center justify-between gap-2 px-1">
      <div className="flex min-w-0 items-center gap-2"><h2 className="truncate text-sm font-semibold">{name}</h2><span className="rounded-full bg-black/5 px-2 py-0.5 text-xs muted dark:bg-white/5">{tasks.length}</span></div>
      <div className="flex items-center">
