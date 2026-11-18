@@ -239,7 +239,10 @@ test.describe.serial('multi-user collaboration', () => {
       )
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
       expect((await rejected).status()).toBe(409)
-      await expect(page.getByRole('alert')).toContainText('Task was changed by another collaborator')
+      const conflictAlert = page.getByRole('alert').filter({
+        hasText: 'Task was changed by another collaborator',
+      })
+      await expect(conflictAlert).toBeVisible()
       await expect(draft).toHaveValue('A draft based on the previous version')
       await page.screenshot({ path: testInfo.outputPath('portfolio-version-conflict.png') })
 
