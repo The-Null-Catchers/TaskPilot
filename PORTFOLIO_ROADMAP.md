@@ -20,6 +20,10 @@
 
 **الديمو:** مدير يوزع مهمة → عضو يعدل offline → تعارض وحل → إشعار → نشاط محفوظ. **الأدلة:** [README](https://github.com/The-Null-Catchers/TaskPilot/blob/main/README.md)، [Release Checklist](https://github.com/The-Null-Catchers/TaskPilot/blob/main/docs/RELEASE_CHECKLIST.md).
 
+## تقدم العرض
+
+يتحقق اختبار `multi-user.spec.ts` من نقل مهمة بين أعمدة لوحة مفتوحة في جلستين مستقلتين ومن رفض تعديل مبني على إصدار أقدم. يرفع CI لقطتي اللوحة والتعارض ضمن حزمة `taskpilot-playwright-report`. تجربة Sync Center على جهاز فعلي والتحقق من بيئة النشر ما زالا ضمن الخطة.
+
 ## بوابة قبول نسخة البورتفيليو
 
 - [ ] يستطيع شخص آخر تشغيل المسار الرئيسي من checkout نظيف، باتباع README، دون أسرار شخصية.
