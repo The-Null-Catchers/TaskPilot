@@ -210,7 +210,7 @@ test.describe.serial('multi-user collaboration', () => {
       await draft.fill('A draft based on the previous version')
 
       await openBoard(actor, b, workspace.name, project.name)
-      const drag = actor.getByRole('button', { name: `Drag ${task.identifier}` })
+      const drag = actor.getByRole('button', { name: `Drag ${task.identifier}`, exact: true })
       const destination = actor.getByRole('region', { name: board.columns[1].name, exact: true })
       await drag.scrollIntoViewIfNeeded()
       await destination.scrollIntoViewIfNeeded()
@@ -219,6 +219,7 @@ test.describe.serial('multi-user collaboration', () => {
       if (!handle || !target) throw new Error('Task or destination column is missing')
       const moved = actor.waitForResponse(response =>
         response.url().endsWith(`/tasks/${task.id}/move`) && response.request().method() === 'POST',
+        { timeout: 15_000 },
       )
       await actor.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
       await actor.mouse.down()
@@ -234,6 +235,7 @@ test.describe.serial('multi-user collaboration', () => {
 
       const rejected = page.waitForResponse(response =>
         response.url().endsWith(`/tasks/${task.id}`) && response.request().method() === 'PATCH',
+        { timeout: 15_000 },
       )
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
       expect((await rejected).status()).toBe(409)

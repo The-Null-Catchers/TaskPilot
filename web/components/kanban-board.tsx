@@ -15,10 +15,10 @@ type TemplateCatalog={task_templates:{key:string;name:string}[];project_template
 type ColumnDialog={mode:'create'|'rename';column?:Column}
 
 function Card({task,onOpen}:{task:Task;onOpen:()=>void}){
- const {attributes,listeners,setNodeRef,transform,isDragging}=useSortable({id:task.id,data:{task}})
- return <article ref={setNodeRef} style={{transform:CSS.Translate.toString(transform)}} {...attributes} className={`rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm ${isDragging?'opacity-60':''}`}>
+ const {attributes,listeners,setNodeRef,setActivatorNodeRef,transform,isDragging}=useSortable({id:task.id,data:{task}})
+ return <article ref={setNodeRef} style={{transform:CSS.Translate.toString(transform)}} className={`rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 shadow-sm ${isDragging?'opacity-60':''}`}>
    <div className="mb-4 flex items-center justify-between">
-     <button {...listeners} onClick={e=>e.stopPropagation()} className="-ml-2 rounded-lg p-1.5 muted hover:bg-black/5 dark:hover:bg-white/5" aria-label={`Drag ${task.identifier}`}><GripVertical size={16}/></button>
+     <button ref={setActivatorNodeRef} {...attributes} {...listeners} onClick={e=>e.stopPropagation()} className="-ml-2 rounded-lg p-1.5 muted hover:bg-black/5 dark:hover:bg-white/5" aria-label={`Drag ${task.identifier}`}><GripVertical size={16}/></button>
      <span className="text-xs font-medium muted">{task.identifier}</span>
      <span className={`h-2 w-2 rounded-full ${task.priority==='urgent'?'bg-red-500':task.priority==='high'?'bg-orange-500':task.priority==='medium'?'bg-amber-400':'bg-slate-300'}`} aria-label={`Priority ${task.priority}`}/>
    </div>
