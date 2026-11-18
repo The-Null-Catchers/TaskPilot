@@ -30,13 +30,15 @@ async function openBoard(page: Page, auth: Auth, workspaceName: string, projectN
   await page.getByLabel('Email').fill(auth.user.email)
   await page.getByLabel('Password').fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
-  await page.getByLabel('Workspace', { exact: true }).selectOption({ label: workspaceName })
+  await expect(page).toHaveURL(/\/app(?:\?|$)/, { timeout: 15_000 })
+  await page.getByRole('combobox', { name: 'Workspace', exact: true }).selectOption({ label: workspaceName })
   await page.getByRole('button', { name: projectName, exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Board', exact: true })).toBeVisible()
 }
 
 test.describe.serial('multi-user collaboration', () => {
   test.setTimeout(120_000)
+  test.use({ actionTimeout: 15_000 })
 
   test('covers invitations, permissions, collaboration, realtime, archive, and saved views', async ({
     page,
@@ -243,7 +245,7 @@ test.describe.serial('multi-user collaboration', () => {
       await observed.getByRole('button', { name: taskTitle, exact: true }).click()
       await expect(page.getByRole('textbox', { name: 'Task title' })).toHaveValue(taskTitle)
     } finally {
-      await actorContext.close()
+      await actorContext.close().catch(() => undefined)
     }
 
     const taskAfterMoveResponse = await request.get(`${API}/tasks/${task.id}`, {
