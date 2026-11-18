@@ -1,54 +1,52 @@
-# TaskPilot — خطة البورتفيليو
+# TaskPilot portfolio roadmap
 
-مرجع التقييم الأساسي: 17 نوفمبر 2026. تحديث نشر الخطة داخل المستودع: 18 نوفمبر 2026.
+Baseline reviewed on November 17, 2026. Repository roadmap published on November 18, 2026.
 
-الخطة خاصة بهذا المستودع، ومستخلصة من خطة Null Catchers المشتركة. وصف «الموجود الموثق» يعكس المراجعة بتاريخها؛ تحقّق من الكود ووثائق الحالة الحالية قبل إنشاء مهمة جديدة. لا تعِد تنفيذ ميزة موجودة، ولا تعتبر وجود تعريف CI دليلًا على نجاح تشغيله.
+This roadmap applies to this repository and follows the shared Null Catchers portfolio plan. Verify the documented state against the current code and runs before starting work.
 
-**تقدير شريحة العرض الأولى:** 20–35 ساعة. التقدير تخطيطي لمطور يعرف المشروع، ويستثني انتظار حسابات المتاجر والمراجعات الخارجية وتجهيز بيئة الهدف. لا يغطي جميع بنود P2.
+**Estimated initial demo effort** 20–35 hours for a developer familiar with the project. The estimate excludes external reviews, store accounts, target environment setup, and later milestones.
 
-## الأولويات الخاصة بالمشروع
+## Project priorities
 
-**الموجود الموثق:** منتج web وFlutter واسع، realtime، تعارضات HTTP 409، offline queue، صلاحيات، مرفقات وإشعارات. README يحدد المتبقي أساسًا كتحقق نشر وأجهزة وأدلة عرض، مع قرار ترخيص غير محسوم.
+**Documented state** The web and Flutter apps include realtime updates, HTTP 409 conflict handling, offline queues, permissions, attachments, and notifications. Hosted and physical-device evidence and licensing remain open.
 
-**P0 — نسخة العرض** أكمل مسار Sync Center على جهاز فعلي بعد إثبات التحديث والتعارض بين جلستين في المتصفح.
+**P0 — Demo** Verify the Sync Center flow on a physical device after the two-browser realtime and stale-update checks.
 
-**P1 — إصدار يمكن تقييمه:** نفّذ فحص Android فعلي للتثبيت وانتهاء الجلسة وإعادة المزامنة والمرفقات. أثبت worker وBeat منفردًا، وتمرن على restore في staging. استكمل توقيع المتاجر وpush فقط عند توفر الحسابات؛ افصلها عن بوابة العرض على المتصفح.
+**P1 — Validation and depth** Verify Android installation, session expiry, resync, and attachments. Check the worker and scheduler independently and rehearse staging restore. Treat app signing and push setup as separate from browser acceptance.
 
-**P2 — لاحقًا:** تكامل واحد يخدم مستخدمًا فعليًا، ثم تجربة onboarding وصلاحيات الضيف من ملاحظات الاستخدام.
+**P2 — Later** Add one integration based on a real user need, then improve onboarding and guest permissions from feedback.
 
-**معيار الإنجاز:** تعديل دون شبكة لا يضيع أو يتكرر، التعارض مفهوم، مستخدم غير مصرح لا يرى مشروعًا، وrelease evidence يسجل الإصدار ونتيجة smoke والقيود.
+**Acceptance criteria** Offline edits persist and sync once. Users can understand conflicts, unauthorized users cannot see the project, and release evidence records the revision, smoke results, and limits.
 
-**الديمو:** مدير يوزع مهمة → عضو يعدل offline → تعارض وحل → إشعار → نشاط محفوظ. **الأدلة:** [README](https://github.com/The-Null-Catchers/TaskPilot/blob/main/README.md)، [Release Checklist](https://github.com/The-Null-Catchers/TaskPilot/blob/main/docs/RELEASE_CHECKLIST.md).
+**Demo scenario** Assign a task → edit offline → resolve a conflict → see notification and audit history. [README](https://github.com/The-Null-Catchers/TaskPilot/blob/main/README.md), [Release Checklist](https://github.com/The-Null-Catchers/TaskPilot/blob/main/docs/RELEASE_CHECKLIST.md).
 
-## الدفعة التالية
+## Next milestones
 
-**ما ثبت حتى الآن**
+[PR #136](https://github.com/The-Null-Catchers/TaskPilot/pull/136) verified that a card moves between two browsers without reload and that a stale edit gets HTTP 409 while its draft remains visible. [Browser run](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44304699815).
 
-في [PR #136](https://github.com/The-Null-Catchers/TaskPilot/pull/136) انتقلت بطاقة في اللوحة بين جلستين دون إعادة تحميل. أعاد الخادم HTTP 409 عند حفظ تعديل مبني على نسخة قديمة، وبقيت مسودة الجلسة مرئية. [تشغيل اختبارات المتصفح](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44304699815).
+1. [ ] Open the same task on Android and web in a test deployment. Disconnect Android, edit locally, then edit on web. Confirm the mobile draft persists on reopening and shows a pending state.
+2. [ ] Reconnect and resolve the conflict in Sync Center. Confirm both clients show the chosen version and audit history records one save.
+3. [ ] Record browser, device, and deployment results with the tested revision. Run hosted smoke when its environment is available.
 
-1. [ ] على Android بتطبيق متصل ببيئة اختبار، افتح نفس المهمة من الهاتف والمتصفح. افصل شبكة الهاتف، سجّل تعديلًا محليًا، وعدّل المهمة من المتصفح. يُقبل البند عندما يحتفظ الهاتف بالمسودة بعد إعادة الفتح ويبيّن انتظار المزامنة.
-2. [ ] أعد الاتصال ونفّذ خيار حل التعارض المتاح في Sync Center. يُقبل البند عندما تُشاهد النسخة التي اعتمدها المستخدم على الجهازين، ويحتفظ سجل النشاط بأثر الحفظ دون تسجيل عملية مكررة.
-3. [ ] قيّد نتيجة اختبار النشر ببيئته وإصداره. يُقبل البند عندما تتضمن أدلة العرض نتيجة المتصفح ونتيجة الجهاز وبيانات التشغيل، ويُسجّل فحص الاستضافة عند توفر بيئتها.
+## Portfolio acceptance checklist
 
-## بوابة قبول نسخة البورتفيليو
+- [ ] Another person can reproduce the primary workflow from a clean checkout using the README and test credentials or fixtures.
+- [ ] The demo tells one complete story with a defined user, problem, and saved result.
+- [ ] Tests cover the main flow, an important failure, and access boundaries when multiple accounts are involved.
+- [ ] Demo data is labeled synthetic and reproducible. Review screenshots and recordings for secrets and customer data.
+- [ ] Include four to six real screenshots where appropriate, a 60–120 second recording, and working links. Identify the revision used for capture.
+- [ ] The README describes implemented capabilities, setup, architecture, limits, tests, and the demo.
+- [ ] A short case study explains two engineering decisions, a considered alternative, and how the system handles an actual failure.
+- [ ] Release evidence records the commit SHA, CI, prerequisites, and limits. Performance data includes workload, hardware, and method.
+- [ ] Licensing and contributor attribution are settled before distribution. Choose the license for each repository individually.
 
-- [ ] يستطيع شخص آخر تشغيل المسار الرئيسي من checkout نظيف، باتباع README، دون أسرار شخصية.
-- [ ] توجد قصة واحدة مكتملة: مستخدم محدد، مشكلة محددة، ومسار بداية إلى نتيجة محفوظة.
-- [ ] ينجح اختبار للمسار الرئيسي وحالة فشل مهمة، وتُختبر حدود الصلاحيات حيث توجد حسابات متعددة.
-- [ ] توجد بيانات عرض اصطناعية معلنة، قابلة لإعادة الإنشاء؛ ولا توجد بيانات عملاء أو أسرار في اللقطات.
-- [ ] توجد 4–6 لقطات حقيقية أو العدد الملائم للأداة، وفيديو 60–120 ثانية، وروابط تعمل. تُلتقط الأدلة من إصدار معروف.
-- [ ] README يوضح المزايا الفعلية، طريقة التشغيل، الرسم المعماري، القيود، وروابط الاختبارات والديمو.
-- [ ] Case study قصيرة تشرح قرارين هندسيين، بديلًا جرى استبعاده ولماذا، وفشلًا حقيقيًا وكيف يعالجه النظام.
-- [ ] صفحة Release تسجل SHA وCI والمتطلبات والقيود. لا تُنشر أرقام أداء دون workload وعتاد وطريقة قياس.
-- [ ] حُسمت سياسة الترخيص ونسب المساهمات قبل التوزيع؛ لا نختار ترخيصًا تلقائيًا لجميع المستودعات.
+A hosted demo is optional. Code execution, server administration, and secret management can be demonstrated through a recording and a reproducible isolated environment. Keep public demo access scoped to the activities it needs.
 
-الديمو المستضاف مفيد وليس شرطًا لكل أداة. أدوات تنفيذ الكود وإدارة الخوادم والأسرار يمكن عرضها بفيديو وبيئة معزولة وتجربة محلية قابلة للإعادة. لا تفتح تنفيذًا عامًا غير محدود لمجرد وجود رابط بورتفيليو.
+## Implementation and follow-up
 
-## التنفيذ والمتابعة
-
-- حوّل P0 إلى مهام صغيرة، لكل منها سلوك متوقع ومعيار قبول واختبار مناسب.
-- ابدأ بتأكيد الموجود؛ عدّل هذه الخطة عندما يغلق بند بدليل مرتبط بcommit أو PR.
-- سجّل مصدر بيانات الديمو، والـSHA الذي التُقطت منه الأدلة، وحدود التجربة الفعلية.
-- راجع الفرق النهائي وانتظر نجاح الفحوص المطلوبة لنفس SHA قبل الدمج، مع احترام حماية الفرع.
-- إذا كان التعديل وثائق فقط ولا يوجد فحص ينطبق عليه، سجّل التحقق من محتواها وروابطها؛ لا تسجل اختبارات تشغيل لم تُنفّذ.
-- لا تُنشر أرقام أداء أو ادعاءات أمان أو جاهزية إنتاج بلا دليل مناسب.
+- Break P0 into tasks with expected behavior, acceptance criteria, and a suitable test.
+- Verify existing functionality first. Update this plan when evidence tied to a commit or PR closes a milestone.
+- Record the fixture source, the revision used for evidence, and the tested limits.
+- Review the final diff and verify required checks for its exact SHA before merging. Follow branch protection.
+- For documentation-only changes with no applicable workflow, verify content and links and record the checks actually performed.
+- Tie performance, security, and readiness claims to supporting evidence.
