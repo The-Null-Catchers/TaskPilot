@@ -138,6 +138,30 @@ void main() {
     expect(controller.state.items, isEmpty);
   });
 
+  test('a conflict survives controller restart with the original draft', () async {
+    final api = await _apiWith([
+      const _Reply(409, '{"detail":"conflict"}'),
+    ]);
+    final first = OfflineQueueController(api);
+    await first.initialize();
+
+    final outcome = await first.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'Keep this offline draft'},
+      label: 'Update DEV-1',
+    );
+
+    expect(outcome, MutationOutcome.conflict);
+    final restored = OfflineQueueController(api);
+    await restored.initialize();
+
+    expect(restored.state.conflictCount, 1);
+    expect(restored.state.items.single.status, OfflineMutationStatus.conflict);
+    expect(restored.state.items.single.data['version'], 1);
+    expect(restored.state.items.single.data['title'], 'Keep this offline draft');
+  });
+
   test('queued edits are restored from account-scoped local storage', () async {
     final api = await _apiWith([const _NetworkFailure()]);
     final first = OfflineQueueController(api);
