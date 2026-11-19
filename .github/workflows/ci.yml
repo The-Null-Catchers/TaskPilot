@@ -165,7 +165,9 @@ jobs:
         run: npm ci
       - name: Install Chromium
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        # GitHub-hosted Ubuntu runners already include Chromium's system libraries.
+        # Avoid apt mirror outages during optional dependency installation.
+        run: npx playwright install chromium
       - name: Run browser E2E
         working-directory: web
         run: npm run e2e
