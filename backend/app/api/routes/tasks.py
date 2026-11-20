@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,7 @@ from app.collaboration_schemas import (
 )
 from app.db import get_db
 from app.domain import would_create_dependency_cycle
+from app.idempotency import add_idempotent, matches_last_mutation, validate_idempotency_key
 from app.models import (
     ActivityLog,
     BoardColumn,
@@ -211,7 +212,9 @@ async def patch_task(
     data: TaskPatch,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     previous_status = task.status
     values = data.model_dump(exclude={"version"}, exclude_unset=True)
@@ -222,11 +225,15 @@ async def patch_task(
     for field in ("title", "description", "priority", "status"):
         if values.get(field) is None:
             values.pop(field, None)
+    client_values = dict(values)
+    if matches_last_mutation(task, data.version, idempotency_key, client_values):
+        return task
     if values.get("status") == "done" and previous_status != "done":
         values["completed_at"] = datetime.now(UTC)
     elif "status" in values and values["status"] != "done" and previous_status == "done":
         values["completed_at"] = None
     values["version"] = data.version + 1
+    values["last_mutation_id"] = idempotency_key
     result = await db.execute(
         update(Task)
         .where(Task.id == task.id, Task.version == data.version)
@@ -236,6 +243,10 @@ async def patch_task(
     updated = result.scalar_one_or_none()
     if not updated:
         await db.rollback()
+        if idempotency_key:
+            replay = await db.scalar(select(Task).where(Task.id == task_id))
+            if replay and matches_last_mutation(replay, data.version, idempotency_key, client_values):
+                return replay
         raise HTTPException(
             status_code=409,
             detail="Task was changed by another collaborator. Refresh and retry.",
@@ -249,16 +260,20 @@ async def patch_task(
     await publish(updated.workspace_id, "task.updated", payload)
     return updated
 
-
 @router.post("/{task_id}/move", response_model=TaskOut)
 async def move_task(
     task_id: UUID,
     data: TaskMove,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     previous_status = task.status
+    requested_values = {"column_id": data.column_id, "position": data.position}
+    if matches_last_mutation(task, data.version, idempotency_key, requested_values):
+        return task
     column = await db.get(BoardColumn, data.column_id)
     if not column or column.project_id != task.project_id:
         raise HTTPException(status_code=400, detail="Invalid destination column")
@@ -267,6 +282,7 @@ async def move_task(
         "column_id": column.id,
         "position": data.position,
         "version": data.version + 1,
+        "last_mutation_id": idempotency_key,
     }
     if (
         project_setting is not None
@@ -284,6 +300,10 @@ async def move_task(
     moved = result.scalar_one_or_none()
     if not moved:
         await db.rollback()
+        if idempotency_key:
+            replay = await db.scalar(select(Task).where(Task.id == task_id))
+            if replay and matches_last_mutation(replay, data.version, idempotency_key, requested_values):
+                return replay
         raise HTTPException(status_code=409, detail="Task moved by another collaborator")
     _activity(db, task, user.id, "task.moved", f"Moved {task.identifier} to {column.name}")
     if previous_status != "done" and moved.status == "done":
@@ -293,7 +313,6 @@ async def move_task(
     payload = TaskOut.model_validate(moved).model_dump(mode="json")
     await publish(moved.workspace_id, "task.moved", payload)
     return moved
-
 
 @router.get("/{task_id}/assignees", response_model=list[UserSummary])
 async def list_assignees(
@@ -360,7 +379,7 @@ async def unassign_user(
         )
     )
     if not assignment:
-        raise HTTPException(status_code=404, detail="Task assignee not found")
+        return
     await db.delete(assignment)
     _activity(db, task, user.id, "task.unassigned", f"Unassigned a member from {task.identifier}")
     await db.commit()
@@ -414,26 +433,37 @@ async def create_subtask(
     data: SubtaskCreate,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     if data.assignee_id:
         await _assignable_user(db, task, data.assignee_id)
+    title = data.title.strip()
     max_position = await db.scalar(select(func.max(Subtask.position)).where(Subtask.task_id == task.id))
     subtask = Subtask(
         task_id=task.id,
-        title=data.title.strip(),
+        title=title,
         assignee_id=data.assignee_id,
         due_date=data.due_date,
         position=(max_position or 0) + 1000,
+        client_mutation_id=idempotency_key,
     )
-    db.add(subtask)
-    await db.flush()
+    subtask, created = await add_idempotent(
+        db,
+        Subtask,
+        subtask,
+        [Subtask.task_id == task.id, Subtask.client_mutation_id == idempotency_key],
+        {"title": title, "assignee_id": data.assignee_id, "due_date": data.due_date},
+        idempotency_key,
+    )
+    if not created:
+        return subtask
     _activity(db, task, user.id, "subtask.created", f"Added subtask to {task.identifier}: {subtask.title}")
     await db.commit()
     await db.refresh(subtask)
     await publish(task.workspace_id, "subtask.created", SubtaskOut.model_validate(subtask).model_dump(mode="json"))
     return subtask
-
 
 @router.patch("/{task_id}/subtasks/{subtask_id}", response_model=SubtaskOut)
 async def patch_subtask(
@@ -442,7 +472,9 @@ async def patch_subtask(
     data: SubtaskPatch,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     current = await db.scalar(select(Subtask).where(Subtask.id == subtask_id, Subtask.task_id == task.id))
     if not current:
@@ -454,7 +486,11 @@ async def patch_subtask(
         values.pop("status", None)
     if "assignee_id" in values and values["assignee_id"] is not None:
         await _assignable_user(db, task, values["assignee_id"])
+    client_values = dict(values)
+    if matches_last_mutation(current, data.version, idempotency_key, client_values):
+        return current
     values["version"] = data.version + 1
+    values["last_mutation_id"] = idempotency_key
     result = await db.execute(
         update(Subtask)
         .where(Subtask.id == current.id, Subtask.version == data.version)
@@ -464,12 +500,15 @@ async def patch_subtask(
     updated = result.scalar_one_or_none()
     if not updated:
         await db.rollback()
+        if idempotency_key:
+            replay = await db.scalar(select(Subtask).where(Subtask.id == subtask_id, Subtask.task_id == task_id))
+            if replay and matches_last_mutation(replay, data.version, idempotency_key, client_values):
+                return replay
         raise HTTPException(status_code=409, detail="Subtask was changed by another collaborator")
     await db.commit()
     await db.refresh(updated)
     await publish(task.workspace_id, "subtask.updated", SubtaskOut.model_validate(updated).model_dump(mode="json"))
     return updated
-
 
 @router.delete("/{task_id}/subtasks/{subtask_id}", status_code=204)
 async def delete_subtask(
@@ -503,16 +542,32 @@ async def create_checklist(
     data: ChecklistCreate,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
+    title = data.title.strip()
     max_position = await db.scalar(select(func.max(Checklist.position)).where(Checklist.task_id == task.id))
-    checklist = Checklist(task_id=task.id, title=data.title.strip(), position=(max_position or 0) + 1000)
-    db.add(checklist)
+    checklist = Checklist(
+        task_id=task.id,
+        title=title,
+        position=(max_position or 0) + 1000,
+        client_mutation_id=idempotency_key,
+    )
+    checklist, created = await add_idempotent(
+        db,
+        Checklist,
+        checklist,
+        [Checklist.task_id == task.id, Checklist.client_mutation_id == idempotency_key],
+        {"title": title},
+        idempotency_key,
+    )
+    if not created:
+        return checklist
     await db.commit()
     await db.refresh(checklist)
     await publish(task.workspace_id, "checklist.created", ChecklistOut.model_validate(checklist).model_dump(mode="json"))
     return checklist
-
 
 async def _checklist_access(db: AsyncSession, task: Task, checklist_id: UUID) -> Checklist:
     checklist = await db.scalar(
@@ -557,26 +612,38 @@ async def create_checklist_item(
     data: ChecklistItemCreate,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     await _checklist_access(db, task, checklist_id)
     if data.assignee_id:
         await _assignable_user(db, task, data.assignee_id)
+    title = data.title.strip()
     max_position = await db.scalar(
         select(func.max(ChecklistItem.position)).where(ChecklistItem.checklist_id == checklist_id)
     )
     item = ChecklistItem(
         checklist_id=checklist_id,
-        title=data.title.strip(),
+        title=title,
         assignee_id=data.assignee_id,
         position=(max_position or 0) + 1000,
+        client_mutation_id=idempotency_key,
     )
-    db.add(item)
+    item, created = await add_idempotent(
+        db,
+        ChecklistItem,
+        item,
+        [ChecklistItem.checklist_id == checklist_id, ChecklistItem.client_mutation_id == idempotency_key],
+        {"title": title, "assignee_id": data.assignee_id},
+        idempotency_key,
+    )
+    if not created:
+        return item
     await db.commit()
     await db.refresh(item)
     await publish(task.workspace_id, "checklist.item.created", ChecklistItemOut.model_validate(item).model_dump(mode="json"))
     return item
-
 
 @router.patch("/{task_id}/checklists/{checklist_id}/items/{item_id}", response_model=ChecklistItemOut)
 async def patch_checklist_item(
@@ -586,7 +653,9 @@ async def patch_checklist_item(
     data: ChecklistItemPatch,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id, write=True)
     await _checklist_access(db, task, checklist_id)
     current = await db.scalar(
@@ -602,7 +671,11 @@ async def patch_checklist_item(
         values.pop("title", None)
     if "assignee_id" in values and values["assignee_id"] is not None:
         await _assignable_user(db, task, values["assignee_id"])
+    client_values = dict(values)
+    if matches_last_mutation(current, data.version, idempotency_key, client_values):
+        return current
     values["version"] = data.version + 1
+    values["last_mutation_id"] = idempotency_key
     result = await db.execute(
         update(ChecklistItem)
         .where(ChecklistItem.id == current.id, ChecklistItem.version == data.version)
@@ -612,12 +685,20 @@ async def patch_checklist_item(
     updated = result.scalar_one_or_none()
     if not updated:
         await db.rollback()
+        if idempotency_key:
+            replay = await db.scalar(
+                select(ChecklistItem).where(
+                    ChecklistItem.id == item_id,
+                    ChecklistItem.checklist_id == checklist_id,
+                )
+            )
+            if replay and matches_last_mutation(replay, data.version, idempotency_key, client_values):
+                return replay
         raise HTTPException(status_code=409, detail="Checklist item changed by another collaborator")
     await db.commit()
     await db.refresh(updated)
     await publish(task.workspace_id, "checklist.item.updated", ChecklistItemOut.model_validate(updated).model_dump(mode="json"))
     return updated
-
 
 @router.delete("/{task_id}/checklists/{checklist_id}/items/{item_id}", status_code=204)
 async def delete_checklist_item(
