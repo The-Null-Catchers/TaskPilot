@@ -20,15 +20,14 @@ class ApiClient {
       handler.next(options);
     }, onError: (error, handler) async {
       if (error.response?.statusCode == 401 && error.requestOptions.extra['retried'] != true && error.requestOptions.extra['skipAuth'] != true) {
-        final refresh = await storage.read(key: 'refresh_token');
-        if (refresh != null) {
-          try {
-            final response = await dio.post('/api/v1/auth/refresh', data: {'refresh_token': refresh, 'client': 'mobile'}, options: Options(extra: {'skipAuth': true}));
-            await saveTokens(response.data as Map<String, dynamic>);
-            final request = error.requestOptions..extra['retried'] = true;
-            request.headers['Authorization'] = 'Bearer ${response.data['access_token']}';
-            return handler.resolve(await dio.fetch(request));
-          } catch (_) {}
+        try {
+          final tokens = await _refreshTokens();
+          final request = error.requestOptions..extra['retried'] = true;
+          request.headers['Authorization'] = 'Bearer ${tokens['access_token']}';
+          return handler.resolve(await dio.fetch(request));
+        } catch (_) {
+          // The original 401 remains visible to the offline queue. Never
+          // silently discard a pending edit when refresh cannot succeed.
         }
       }
       handler.next(error);
@@ -37,6 +36,34 @@ class ApiClient {
 
   final Dio dio;
   final FlutterSecureStorage storage;
+  Future<Map<String, dynamic>>? _refreshing;
+
+  Future<Map<String, dynamic>> _refreshTokens() {
+    final active = _refreshing;
+    if (active != null) return active;
+
+    final operation = () async {
+      final refresh = await storage.read(key: 'refresh_token');
+      if (refresh == null) throw StateError('No refresh token');
+      final account = await currentUserId();
+      final response = await dio.post(
+        '/api/v1/auth/refresh',
+        data: {'refresh_token': refresh, 'client': 'mobile'},
+        options: Options(extra: {'skipAuth': true}),
+      );
+      if (account != await currentUserId()) {
+        throw StateError('Account changed during token refresh');
+      }
+      final tokens = (response.data as Map).cast<String, dynamic>();
+      await saveTokens(tokens);
+      return tokens;
+    }();
+
+    _refreshing = operation;
+    return operation.whenComplete(() {
+      _refreshing = null;
+    });
+  }
 
   Future<void> saveTokens(Map<String, dynamic> data) async {
     await storage.write(key: 'access_token', value: data['access_token'] as String?);
