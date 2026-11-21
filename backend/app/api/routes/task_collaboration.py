@@ -207,11 +207,10 @@ async def add_comment_with_mentions(
         Comment,
         comment,
         [
-            Comment.task_id == task.id,
             Comment.author_id == user.id,
             Comment.client_mutation_id == idempotency_key,
         ],
-        {"body": body},
+        {"task_id": task.id, "body": body},
         idempotency_key,
     )
     if not created:

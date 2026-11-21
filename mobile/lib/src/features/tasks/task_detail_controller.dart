@@ -128,6 +128,8 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
   final OfflineQueueController queue;
   final String taskId;
 
+  String _cacheKey(String userId) => 'cached_task_${userId}_$taskId';
+
   TaskDetailState _withStatus({TaskItem? task, bool? offline, bool? pendingSync, bool? conflict}) => TaskDetailState(
         loading: false,
         offline: offline ?? state.offline,
@@ -151,13 +153,15 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
       );
 
   Future<void> load({bool quiet = false}) async {
+    final userId = await api.currentUserId();
     final prefs = await SharedPreferences.getInstance();
-    final cacheKey = 'cached_task_$taskId';
+    final cacheKey = userId == null ? null : _cacheKey(userId);
     if (!quiet) state = TaskDetailState(loading: true, task: state.task, pendingSync: state.pendingSync, conflict: state.conflict);
     try {
       final taskResponse = await api.dio.get('/api/v1/tasks/$taskId');
       final task = TaskItem.fromJson((taskResponse.data as Map).cast<String, dynamic>());
-      await prefs.setString(cacheKey, jsonEncode(task.toJson()));
+      if (userId == null || await api.currentUserId() != userId) return;
+      if (cacheKey != null) await prefs.setString(cacheKey, jsonEncode(task.toJson()));
       final responses = await Future.wait([
         api.dio.get('/api/v1/tasks/$taskId/comments'),
         api.dio.get('/api/v1/tasks/$taskId/assignees'),
@@ -206,6 +210,7 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
       } catch (_) {
         // Core task detail remains usable if optional collaboration metadata fails.
       }
+      if (await api.currentUserId() != userId) return;
       state = TaskDetailState(
         loading: false,
         task: task,
@@ -224,7 +229,8 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
         currentUserId: me['id'] as String?,
       );
     } catch (_) {
-      final cached = prefs.getString(cacheKey);
+      if (userId == null || await api.currentUserId() != userId) return;
+      final cached = cacheKey == null ? null : prefs.getString(cacheKey);
       if (cached != null) {
         state = TaskDetailState(loading: false, offline: true, pendingSync: state.pendingSync, conflict: state.conflict, task: TaskItem.fromJson((jsonDecode(cached) as Map).cast<String, dynamic>()));
       } else {
@@ -236,14 +242,16 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
   Future<MutationOutcome> updateTask({required String title, required String description, required String priority, required String status, String? startDate, String? dueDate, int? estimateMinutes}) async {
     final task = state.task;
     if (task == null) return MutationOutcome.conflict;
+    final userId = await api.currentUserId();
+    if (userId == null) throw StateError('Sign in before editing a task');
     final data = {'version': task.version, 'title': title, 'description': description, 'priority': priority, 'status': status, 'start_date': startDate, 'due_date': dueDate, 'estimate_minutes': estimateMinutes};
     final outcome = await queue.mutate(method: 'PATCH', path: '/api/v1/tasks/$taskId', data: data, label: 'Update ${task.identifier}');
     if (outcome == MutationOutcome.synced) {
       await load(quiet: true);
-    } else {
+    } else if (await api.currentUserId() == userId) {
       final optimistic = task.copyWith(title: title, description: description, priority: priority, status: status, startDate: startDate, clearStartDate: startDate == null, dueDate: dueDate, clearDueDate: dueDate == null, estimateMinutes: estimateMinutes, clearEstimate: estimateMinutes == null, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cached_task_$taskId', jsonEncode(optimistic.toJson()));
+      await prefs.setString(_cacheKey(userId), jsonEncode(optimistic.toJson()));
       state = _withStatus(task: optimistic, offline: true, pendingSync: outcome == MutationOutcome.queued, conflict: outcome == MutationOutcome.conflict);
     }
     return outcome;
