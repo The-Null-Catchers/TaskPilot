@@ -20,6 +20,14 @@ This roadmap applies to this repository and follows the shared Null Catchers por
 
 **Demo scenario** Assign a task → edit offline → resolve a conflict → see notification and audit history. [README](https://github.com/The-Null-Catchers/TaskPilot/blob/main/README.md), [Release Checklist](https://github.com/The-Null-Catchers/TaskPilot/blob/main/docs/RELEASE_CHECKLIST.md).
 
+## Portfolio completion checkpoint (November 21, 2026)
+
+The draft [PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140) extends the existing baseline rather than replacing it. Its first implementation commits add backend idempotency metadata, stable mobile mutation IDs, ordered replay, explicit server/local conflict comparison, and account-scoped task caches. The migration revision identifier was shortened to fit PostgreSQL's Alembic version column.
+
+**Still open:** exact-SHA CI confirmation, emulator/physical-device offline scenario, audit verification against both clients, genuine screenshots/recording, staging smoke and restore drill, and licensing. The earlier baseline CI success does not close these new acceptance gates.
+
+The demo, engineering decisions, and evidence are documented in [PORTFOLIO_DEMO.md](docs/PORTFOLIO_DEMO.md), [CASE_STUDY.md](docs/CASE_STUDY.md), and [PORTFOLIO_EVIDENCE.md](docs/PORTFOLIO_EVIDENCE.md).
+
 ## Next milestones
 
 [PR #136](https://github.com/The-Null-Catchers/TaskPilot/pull/136) verified that a card moves between two browsers without reload and that a stale edit gets HTTP 409 while its draft remains visible. [Browser run](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44304699815).

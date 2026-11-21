@@ -142,3 +142,40 @@ async def test_comment_and_subtask_creation_replays_do_not_duplicate_records(api
     subtasks = await api_client.get(f"/api/v1/tasks/{task['id']}/subtasks", headers=headers)
     assert subtasks.status_code == 200, subtasks.text
     assert len([item for item in subtasks.json() if item["title"] == subtask_payload["title"]]) == 1
+
+
+@pytest.mark.asyncio
+async def test_comment_key_cannot_be_reused_for_a_different_task(api_client):
+    headers, task = await _create_task(api_client)
+    second = await api_client.post(
+        "/api/v1/tasks",
+        headers=headers,
+        json={
+            "project_id": task["project_id"],
+            "column_id": task["column_id"],
+            "title": "Different task for key reuse",
+        },
+    )
+    assert second.status_code == 201, second.text
+
+    mutation_id = uuid4().hex
+    first = await api_client.post(
+        f"/api/v1/tasks/{task['id']}/comments/rich",
+        headers={**headers, "Idempotency-Key": mutation_id},
+        json={"body": "Original comment"},
+    )
+    assert first.status_code == 201, first.text
+
+    reused = await api_client.post(
+        f"/api/v1/tasks/{second.json()['id']}/comments/rich",
+        headers={**headers, "Idempotency-Key": mutation_id},
+        json={"body": "Original comment"},
+    )
+    assert reused.status_code == 409, reused.text
+
+    second_comments = await api_client.get(
+        f"/api/v1/tasks/{second.json()['id']}/comments",
+        headers=headers,
+    )
+    assert second_comments.status_code == 200, second_comments.text
+    assert second_comments.json() == []
