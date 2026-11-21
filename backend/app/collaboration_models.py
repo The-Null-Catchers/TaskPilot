@@ -40,36 +40,50 @@ class TaskWatcher(Base):
 
 class Subtask(Base):
     __tablename__ = "subtasks"
+    __table_args__ = (
+        UniqueConstraint("task_id", "client_mutation_id", name="uq_subtask_task_client_mutation"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(240))
+    client_mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(24), default="open", index=True)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     position: Mapped[float] = mapped_column(Float, default=1000.0)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    last_mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
 class Checklist(Base):
     __tablename__ = "checklists"
+    __table_args__ = (
+        UniqueConstraint("task_id", "client_mutation_id", name="uq_checklist_task_client_mutation"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(160))
+    client_mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     position: Mapped[float] = mapped_column(Float, default=1000.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class ChecklistItem(Base):
     __tablename__ = "checklist_items"
+    __table_args__ = (
+        UniqueConstraint("checklist_id", "client_mutation_id", name="uq_checklist_item_client_mutation"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     checklist_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("checklists.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(240))
+    client_mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     position: Mapped[float] = mapped_column(Float, default=1000.0)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    last_mutation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 

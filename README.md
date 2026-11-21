@@ -4,6 +4,17 @@ TaskPilot is a production-oriented collaborative project and task management pla
 
 The repository is intentionally built as a portfolio-grade system rather than a CRUD demo: multi-tenant authorization, realtime collaboration, optimistic concurrency, offline mobile mutations, object storage, background delivery, notifications, analytics, admin tooling, integrations, CI/CD, and production deployment are all implemented as working product paths.
 
+## Portfolio completion branch
+
+The active portfolio-completion work is reviewed in [draft PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140). It builds on the merged two-browser collaboration regression in PR #136 and controller-restart conflict regression in PR #139.
+
+- [Engineering case study](docs/CASE_STUDY.md): architecture, decisions, offline-first and concurrency design, and limitations.
+- [Reproducible portfolio demo](docs/PORTFOLIO_DEMO.md): synthetic Northstar Product Team data, two-browser collaboration, Android offline/conflict walkthrough, and a 90-second recording script.
+- [Evidence ledger](docs/PORTFOLIO_EVIDENCE.md): exact commit SHAs, historical CI runs, and unverified release gates.
+- [Portfolio roadmap](PORTFOLIO_ROADMAP.md): prioritized remaining acceptance work.
+
+**Verification boundary:** baseline CI passed at `9ce715ad5cb9cfdded7d52e950ad3c4a0920644b`, but that does not establish release readiness for newer commits. Device-level offline sync, signed store builds, backup restore, and final portfolio screenshots must be verified independently.
+
 ## Product surface
 
 ### Web
@@ -293,7 +304,7 @@ Android CI artifacts are uploaded as `taskpilot-android`; this is a credential-f
 
 To download a contributor/test Android build, open the successful **TaskPilot CI** run for the target commit and download `taskpilot-android`. For a real distribution build, use **TaskPilot Android signed release** instead; setup and artifact distinctions are documented in [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md).
 
-The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot currently pins Next.js 16.3.5 so the high-severity PostCSS advisory previously reported through Next's bundled dependency is not accepted by CI.
+The web runtime gate uses `npm audit --omit=dev --audit-level=high`. TaskPilot currently pins Next.js 16.4.6 so the high-severity PostCSS advisory previously reported through Next's bundled dependency is not accepted by CI.
 
 Store signing credentials must be supplied through CI secrets before Play Store or App Store publication; no keystore, certificate, provisioning profile, Firebase client credential, service-account key, or signing password belongs in the repository. Android production signing/Play internal upload is documented in [docs/ANDROID_RELEASE.md](docs/ANDROID_RELEASE.md). The unsigned iOS contributor gate stays in `ci.yml`; production archive/IPA/TestFlight automation is documented in [docs/IOS_RELEASE.md](docs/IOS_RELEASE.md).
 

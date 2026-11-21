@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api.dart';
+import '../auth/auth_controller.dart';
 import '../tasks/task_models.dart';
 
 class ProjectsState {
@@ -15,6 +16,7 @@ class ProjectsState {
 }
 
 final projectsProvider = StateNotifierProvider.family<ProjectsController, ProjectsState, String>((ref, workspaceId) {
+  ref.watch(authProvider);
   return ProjectsController(ref.watch(apiProvider), workspaceId)..load();
 });
 
@@ -24,14 +26,22 @@ class ProjectsController extends StateNotifier<ProjectsState> {
   final String workspaceId;
 
   Future<void> load() async {
+    final userId = await api.currentUserId();
+    if (userId == null) {
+      state = const ProjectsState(loading: false);
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
-    final cacheKey = 'cached_projects_$workspaceId';
+    final cacheKey = 'cached_projects_${userId}_$workspaceId';
     try {
       final response = await api.dio.get('/api/v1/projects', queryParameters: {'workspace_id': workspaceId});
       final items = (response.data as List).map((item) => Project.fromJson((item as Map).cast<String, dynamic>())).toList();
+      if (!mounted || await api.currentUserId() != userId) return;
       await prefs.setString(cacheKey, jsonEncode(items.map((item) => item.toJson()).toList()));
+      if (!mounted || await api.currentUserId() != userId) return;
       state = ProjectsState(loading: false, projects: items);
     } catch (_) {
+      if (await api.currentUserId() != userId) return;
       final cached = prefs.getString(cacheKey);
       if (cached != null) {
         final items = (jsonDecode(cached) as List).map((item) => Project.fromJson((item as Map).cast<String, dynamic>())).toList();
