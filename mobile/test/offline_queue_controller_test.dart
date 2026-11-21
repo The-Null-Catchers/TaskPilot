@@ -212,6 +212,37 @@ void main() {
     expect(restored.state.items.single.data['title'], 'Keep this offline draft');
   });
 
+  test('switching accounts during an in-flight replay clears old queue from view', () async {
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final api = await _apiWith([
+      const _NetworkFailure(),
+      _HeldReply(started, release),
+    ]);
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'User one only'},
+      label: 'Update DEV-1',
+    );
+    expect(controller.state.items, hasLength(1));
+
+    final syncing = controller.sync();
+    await started.future;
+    await api.storage.write(key: 'current_user_id', value: 'user-2');
+    release.complete();
+    await syncing;
+
+    expect(controller.state.items, isEmpty);
+    await controller.initialize();
+    expect(controller.state.items, isEmpty);
+    await api.storage.write(key: 'current_user_id', value: 'user-1');
+    await controller.initialize();
+    expect(controller.state.items, isEmpty);
+  });
+
   test('queued edits are restored from account-scoped local storage', () async {
     final api = await _apiWith([const _NetworkFailure()]);
     final first = OfflineQueueController(api);

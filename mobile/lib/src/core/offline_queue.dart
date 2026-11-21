@@ -351,11 +351,19 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
         await _persistForUser(userId, List<OfflineMutation>.from(remaining));
       }
     } finally {
+      // The authenticated account can change while a network request is in
+      // flight. Never publish the previous account's queue into the new session.
+      final activeUserId = await api.currentUserId();
       if (mounted) {
-        state = OfflineQueueState(
-          loading: false,
-          items: List<OfflineMutation>.from(remaining),
-        );
+        if (activeUserId == userId && _loadedUserId == userId) {
+          state = OfflineQueueState(
+            loading: false,
+            items: List<OfflineMutation>.from(remaining),
+          );
+        } else {
+          _loadedUserId = null;
+          state = const OfflineQueueState(loading: false);
+        }
       }
     }
   }
