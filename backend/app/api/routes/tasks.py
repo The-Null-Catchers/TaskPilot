@@ -226,6 +226,15 @@ async def patch_task(
         if values.get(field) is None:
             values.pop(field, None)
     client_values = dict(values)
+    changed_fields = []
+    for field, new_value in client_values.items():
+        old_value = getattr(task, field, None)
+        if old_value == new_value:
+            continue
+        if field in {"status", "priority"}:
+            changed_fields.append(f"{field}: {old_value} -> {new_value}")
+        else:
+            changed_fields.append(f"{field} changed")
     if matches_last_mutation(task, data.version, idempotency_key, client_values):
         return task
     if values.get("status") == "done" and previous_status != "done":
@@ -251,7 +260,11 @@ async def patch_task(
             status_code=409,
             detail="Task was changed by another collaborator. Refresh and retry.",
         )
-    _activity(db, task, user.id, "task.updated", f"Updated {task.identifier}")
+    summary = (
+        f"Updated {task.identifier} v{data.version}->{data.version + 1}: "
+        + (", ".join(changed_fields) if changed_fields else "no field changes")
+    )
+    _activity(db, task, user.id, "task.updated", summary[:500])
     if previous_status != "done" and updated.status == "done":
         await _notify_dependency_resolved(db, updated)
     await db.commit()

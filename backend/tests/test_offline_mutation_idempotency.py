@@ -86,6 +86,8 @@ async def test_task_update_replay_is_idempotent_and_audited_once(api_client):
     assert activity.status_code == 200, activity.text
     updates = [item for item in activity.json() if item["action"] == "task.updated"]
     assert len(updates) == 1
+    assert "title changed" in updates[0]["summary"]
+    assert "v1->2" in updates[0]["summary"]
 
     changed_payload = {"version": 1, "title": "Reusing a key for different content"}
     reused_key = await api_client.patch(
