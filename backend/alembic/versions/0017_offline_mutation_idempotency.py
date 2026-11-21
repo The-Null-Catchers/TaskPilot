@@ -1,13 +1,13 @@
 """Add idempotency metadata for offline mutations.
 
-Revision ID: 0017_offline_mutation_idempotency
+Revision ID: 0017_offline_idempotency
 Revises: 0016_product_settings
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0017_offline_mutation_idempotency"
+revision = "0017_offline_idempotency"
 down_revision = "0016_product_settings"
 branch_labels = None
 depends_on = None
