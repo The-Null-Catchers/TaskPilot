@@ -22,7 +22,7 @@ This roadmap applies to this repository and follows the shared Null Catchers por
 
 ## Portfolio completion checkpoint (November 21, 2026)
 
-The draft [PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140) extends the existing baseline rather than replacing it. Its first implementation commits add backend idempotency metadata, stable mobile mutation IDs, ordered replay, explicit server/local conflict comparison, and account-scoped task caches. The migration revision identifier was shortened to fit PostgreSQL's Alembic version column.
+The draft [PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140) extends the existing baseline rather than replacing it. Its first implementation commits add backend idempotency metadata, stable mobile mutation IDs, write-ahead persistence, ordered replay, explicit server/local conflict comparison, account-scoped caches, single-flight mobile refresh, and versioned task audit summaries. The migration revision identifier was shortened to fit PostgreSQL's Alembic version column.
 
 **Still open:** exact-SHA CI confirmation, emulator/physical-device offline scenario, audit verification against both clients, genuine screenshots/recording, staging smoke and restore drill, and licensing. The earlier baseline CI success does not close these new acceptance gates.
 

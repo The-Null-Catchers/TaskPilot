@@ -11,9 +11,11 @@ All notable TaskPilot portfolio changes should be tied to a Git revision and ver
 
 ### Changed
 - Flutter sends a stable `Idempotency-Key` on the initial mutation and every replay.
-- Offline queue operations are serialized, preserve FIFO order, and checkpoint acknowledged mutations before processing later ones.
+- Offline queue operations are serialized, preserve FIFO order, persist drafts before the first network send, and checkpoint acknowledged mutations before processing later ones.
 - Sync Center requires explicit conflict review before applying a local task edit.
-- Task-detail cache keys are scoped by account to avoid cross-account cache display.
+- Workspace, project, board, and task-detail cache keys are scoped by account to avoid cross-account cache display.
+- Concurrent mobile 401 responses share a single refresh-token rotation.
+- Task activity summaries record changed fields and version transitions.
 - Idempotent comment replay validation includes the original task ID.
 
 ### Validation

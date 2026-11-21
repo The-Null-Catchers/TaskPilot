@@ -8,7 +8,7 @@ This ledger separates **observed CI results** from implementation work and unver
 - Feature branch: `portfolio/taskpilot-completion`.
 - Initial feature-branch checkpoint: `5bee1ab9594713907fe9604b074bd632bcc4e6c5`.
 - Mobile sync/queue implementation checkpoint: `b953e23597a6ac193ac3b7cebabdb0cb1b11b8cc`.
-- Final release-candidate SHA: **not assigned**. Update this after all code/docs changes and successful exact-SHA CI.
+- Latest implementation checkpoint: `3dc099bd57f6f4678209c587da50e6e932140fbb`. The final PR head includes subsequent evidence/documentation commits; use the exact SHA shown by GitHub Actions for release decisions.
 
 ## Verified historical evidence
 
@@ -25,6 +25,13 @@ The historical CI jobs include backend Ruff/Pytest/migrations, web lint/Vitest/t
 - [TaskPilot CI run #44916081158](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916081158) for `b953e23597a6ac193ac3b7cebabdb0cb1b11b8cc`: backend migration and browser E2E setup **failed** because the new Alembic revision identifier exceeded PostgreSQL's 32-character version column. Web lint/test/typecheck/build passed. Do not use this run as a passing release gate.
 - Fix commit: `1ba5d2386f0749207bf817a2240394a359091102` shortens the Alembic revision ID. [Follow-up CI #44916220188](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916220188) was in progress when this ledger was drafted. Recheck before claiming success.
 - The new backend migration revision is `0017_offline_idempotency` (shortened after a CI failure caused by the original 33-character revision ID). Migration upgrade/downgrade must be reverified on the final SHA.
+
+### Follow-up runs
+
+- [CI #44916301159](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916301159) on `e25fe8a2acfc1360eee81a8430ed82bf73cdd8c8`: backend Ruff/Pytest/migrations and browser E2E passed (historical checkpoint).
+- [CI #44916442059](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916442059) on `8c5f5b69330a6385d134d1965d5a179759df847c`: backend, web, browser E2E, and Docker jobs passed at the time of inspection. Flutter build jobs were still in progress.
+- [CI #44916695537](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916695537) on `3dc099bd57f6f4678209c587da50e6e932140fbb`: **pending at documentation time**. This is the newest implementation test run, including write-ahead persistence.
+- All final-head checks must be inspected after completion. A queued/in-progress job is not a pass.
 
 ## Pending acceptance matrix
 
