@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -18,6 +19,13 @@ class _NetworkFailure {
   const _NetworkFailure();
 }
 
+class _HeldReply {
+  _HeldReply(this.started, this.release);
+
+  final Completer<void> started;
+  final Completer<void> release;
+}
+
 class _ScriptedAdapter implements HttpClientAdapter {
   _ScriptedAdapter(this.script);
 
@@ -36,6 +44,17 @@ class _ScriptedAdapter implements HttpClientAdapter {
       throw StateError('No scripted response for ${options.method} ${options.path}');
     }
     final step = script[calls++];
+    if (step is _HeldReply) {
+      step.started.complete();
+      await step.release.future;
+      return ResponseBody.fromString(
+        '{}',
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
     if (step is _NetworkFailure) {
       throw DioException(
         requestOptions: options,
@@ -70,6 +89,30 @@ Future<ApiClient> _apiWith(List<Object> script) async {
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+  });
+
+  test('first request is persisted before network acknowledgement', () async {
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final api = await _apiWith([_HeldReply(started, release)]);
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    final sending = controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'Durable before send'},
+      label: 'Update DEV-1',
+    );
+
+    await started.future;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('taskpilot_offline_mutations_v1_user-1');
+    expect(raw, contains('Durable before send'));
+
+    release.complete();
+    expect(await sending, MutationOutcome.synced);
+    expect(controller.state.items, isEmpty);
   });
 
   test('network failure queues edit and successful reconnect replays it', () async {

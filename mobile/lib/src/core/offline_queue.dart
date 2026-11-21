@@ -272,19 +272,34 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
           status: OfflineMutationStatus.pending,
         );
 
+        // Write-ahead persistence: a process crash while the first request is
+        // in flight must not erase the draft. The same key is used on replay.
+        final items = [...state.items, mutation];
+        await _persistForUser(userId, items);
+
         // Once a queue exists, append instead of sending later operations ahead
         // of an unresolved earlier mutation.
-        if (state.items.isNotEmpty) {
-          await _persistForUser(userId, [...state.items, mutation]);
-          return MutationOutcome.queued;
-        }
+        if (items.length > 1) return MutationOutcome.queued;
 
         try {
+          if (await api.currentUserId() != userId) {
+            return MutationOutcome.queued;
+          }
           await _send(mutation);
+          await _persistForUser(userId, const <OfflineMutation>[]);
           return MutationOutcome.synced;
         } on DioException catch (error) {
           final status = _statusForError(error);
-          if (status == null) rethrow;
+          if (status == null) {
+            await _persistForUser(
+              userId,
+              [mutation.copyWith(
+                status: OfflineMutationStatus.failed,
+                error: _errorFor(error, OfflineMutationStatus.failed),
+              )],
+            );
+            return MutationOutcome.queued;
+          }
           await _persistForUser(
             userId,
             [mutation.copyWith(status: status, error: _errorFor(error, status))],
@@ -304,6 +319,7 @@ class OfflineQueueController extends StateNotifier<OfflineQueueState> {
     state = OfflineQueueState(loading: false, syncing: true, items: remaining);
     try {
       while (remaining.isNotEmpty) {
+        if (await api.currentUserId() != userId) break;
         final mutation = remaining.first;
         // An unresolved conflict, failed request, or expired session blocks
         // all later mutations. Never reorder or silently skip it.
