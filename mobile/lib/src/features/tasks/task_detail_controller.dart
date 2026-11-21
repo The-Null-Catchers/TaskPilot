@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api.dart';
 import '../../core/offline_queue.dart';
+import '../auth/auth_controller.dart';
 import 'task_models.dart';
 
 class PersonItem {
@@ -120,7 +121,10 @@ class TaskDetailState {
   final String? error;
 }
 
-final taskDetailProvider = StateNotifierProvider.family<TaskDetailController, TaskDetailState, String>((ref, taskId) => TaskDetailController(ref.watch(apiProvider), ref.read(offlineQueueProvider.notifier), taskId)..load());
+final taskDetailProvider = StateNotifierProvider.family<TaskDetailController, TaskDetailState, String>((ref, taskId) {
+  ref.watch(authProvider);
+  return TaskDetailController(ref.watch(apiProvider), ref.read(offlineQueueProvider.notifier), taskId)..load();
+});
 
 class TaskDetailController extends StateNotifier<TaskDetailState> {
   TaskDetailController(this.api, this.queue, this.taskId) : super(const TaskDetailState());
@@ -156,11 +160,11 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
     final userId = await api.currentUserId();
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = userId == null ? null : _cacheKey(userId);
-    if (!quiet) state = TaskDetailState(loading: true, task: state.task, pendingSync: state.pendingSync, conflict: state.conflict);
+    if (!quiet) state = TaskDetailState(loading: true, task: userId == state.currentUserId ? state.task : null, pendingSync: state.pendingSync, conflict: state.conflict);
     try {
       final taskResponse = await api.dio.get('/api/v1/tasks/$taskId');
       final task = TaskItem.fromJson((taskResponse.data as Map).cast<String, dynamic>());
-      if (userId == null || await api.currentUserId() != userId) return;
+      if (!mounted || userId == null || await api.currentUserId() != userId) return;
       if (cacheKey != null) await prefs.setString(cacheKey, jsonEncode(task.toJson()));
       final responses = await Future.wait([
         api.dio.get('/api/v1/tasks/$taskId/comments'),
@@ -210,7 +214,7 @@ class TaskDetailController extends StateNotifier<TaskDetailState> {
       } catch (_) {
         // Core task detail remains usable if optional collaboration metadata fails.
       }
-      if (await api.currentUserId() != userId) return;
+      if (!mounted || await api.currentUserId() != userId) return;
       state = TaskDetailState(
         loading: false,
         task: task,
