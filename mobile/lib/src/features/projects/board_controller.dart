@@ -32,11 +32,13 @@ class BoardController extends StateNotifier<BoardState> {
   WebSocketChannel? _channel;
   bool _connecting = false;
 
-  Future<void> _cache(BoardData board) async {
-    final userId = await api.currentUserId();
-    if (userId == null) return;
+  Future<void> _cache(BoardData board, String ownerUserId) async {
+    if (await api.currentUserId() != ownerUserId) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('cached_board_${userId}_$projectId', jsonEncode(board.toJson()));
+    await prefs.setString(
+      'cached_board_${ownerUserId}_$projectId',
+      jsonEncode(board.toJson()),
+    );
   }
 
   Future<void> load({bool quiet = false}) async {
@@ -109,6 +111,8 @@ class BoardController extends StateNotifier<BoardState> {
   }
 
   Future<MutationOutcome> moveTask(TaskItem task, BoardColumn destination) async {
+    final ownerUserId = await api.currentUserId();
+    if (ownerUserId == null) throw StateError('Sign in before moving a task');
     final current = state.board;
     if (current == null || task.columnId == destination.id) return MutationOutcome.synced;
     final destinationTasks = current.tasks.where((item) => item.columnId == destination.id).toList()..sort((a, b) => a.position.compareTo(b.position));
@@ -116,7 +120,7 @@ class BoardController extends StateNotifier<BoardState> {
     final optimisticTask = task.copyWith(columnId: destination.id, position: position, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
     final optimisticBoard = BoardData(project: current.project, columns: current.columns, tasks: current.tasks.map((item) => item.id == task.id ? optimisticTask : item).toList());
     state = BoardState(loading: false, board: optimisticBoard, offline: state.offline, pendingSync: state.pendingSync, conflict: state.conflict);
-    await _cache(optimisticBoard);
+    await _cache(optimisticBoard, ownerUserId);
     try {
       final outcome = await queue.mutate(
         method: 'POST',
@@ -132,7 +136,7 @@ class BoardController extends StateNotifier<BoardState> {
       return outcome;
     } catch (_) {
       state = BoardState(loading: false, board: current);
-      await _cache(current);
+      await _cache(current, ownerUserId);
       rethrow;
     }
   }
