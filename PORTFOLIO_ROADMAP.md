@@ -58,3 +58,9 @@ A hosted demo is optional. Code execution, server administration, and secret man
 - Review the final diff and verify required checks for its exact SHA before merging. Follow branch protection.
 - For documentation-only changes with no applicable workflow, verify content and links and record the checks actually performed.
 - Tie performance, security, and readiness claims to supporting evidence.
+
+## November 25 follow-up
+
+- Verified all six CI jobs on `d42016b8907383d732aaa89814b14257d531c562` (95 backend tests, 3 browser E2E tests, Flutter tests and mobile builds, Docker gates).
+- Fixed cold startup clearing credentials on temporary refresh failure; added five regression cases in `mobile/test/auth_restore_test.dart`. New revision requires its own CI and emulator verification.
+- P0 device acceptance remains open. See the evidence ledger for exact revision boundaries.

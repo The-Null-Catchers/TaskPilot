@@ -58,3 +58,10 @@ No new screenshots or recording are claimed for the feature branch at this check
 Offline SharedPreferences are account-partitioned but not a substitute for an encrypted local database. Backend idempotency covers supported endpoints, not arbitrary operations. Physical Android/iOS push, signed store distribution, restore drills, and production deployment are not validated by this evidence ledger.
 
 Update this file with links to exact successful checks and screenshots after they exist.
+
+## November 25 follow-up
+
+- [CI #44917499098](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098) completed successfully on `d42016b8907383d732aaa89814b14257d531c562`: all six jobs passed. Backend: 95 passed, 1 warning. Playwright: 3 passed. Runtime npm audit: 0 vulnerabilities. Flutter analyzer: no issues; Flutter tests passed on Android and iOS jobs. Android release APK (59.3 MB), AAB (57.6 MB), unsigned iOS Runner.app (24.7 MB), production Compose and Docker image builds succeeded.
+- [Cold-start fix](https://github.com/The-Null-Catchers/TaskPilot/commit/33448547f05b988b54eb01aa749090e76d28bb55): transient refresh failures retain the identified local account and its offline drafts; rejected refreshes require sign-in. Five new regression cases are included. **Not yet verified by CI at documentation time.**
+- [Browser artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14712117865), [Android artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14712299250), [unsigned iOS artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14711888917) correspond to the earlier verified revision, not the new fix. Screenshot contents have not been curated or independently inspected.
+- No local Flutter SDK, Docker or Android emulator was available in the review environment. Device acceptance, release signing, restore drill, recording and fresh CI remain open.

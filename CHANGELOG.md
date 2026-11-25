@@ -10,6 +10,8 @@ All notable TaskPilot portfolio changes should be tied to a Git revision and ver
 - Portfolio case study, demo walkthrough, recording script, and evidence ledger.
 
 ### Changed
+
+- Preserve the identified local mobile session during temporary startup refresh failures, including offline restarts; require sign-in after a definitive rejection. Authentication endpoints bypass automatic refresh. Added five regression cases (CI verification pending).
 - Flutter sends a stable `Idempotency-Key` on the initial mutation and every replay.
 - Offline queue operations are serialized, preserve FIFO order, persist drafts before the first network send, and checkpoint acknowledged mutations before processing later ones.
 - Sync Center requires explicit conflict review before applying a local task edit.
