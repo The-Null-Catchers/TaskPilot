@@ -24,26 +24,72 @@ class AuthController extends StateNotifier<AuthState> {
   final ApiClient api;
   final PushRegistrationService pushRegistration;
 
+  Future<void> _restoreLocalSession(String userId) async {
+    final onboardingUserId = await api.storage.read(key: 'onboarding_required_user_id');
+    if (!mounted) return;
+    state = AuthState(authenticated: true, needsOnboarding: onboardingUserId == userId);
+  }
+
+  bool _temporaryRefreshFailure(DioException error) {
+    final status = error.response?.statusCode;
+    return status == 408 ||
+        status == 425 ||
+        status == 429 ||
+        (status != null && status >= 500) ||
+        error.type == DioExceptionType.connectionError ||
+        error.type == DioExceptionType.connectionTimeout ||
+        error.type == DioExceptionType.sendTimeout ||
+        error.type == DioExceptionType.receiveTimeout;
+  }
+
   Future<void> restore() async {
     final refresh = await api.storage.read(key: 'refresh_token');
-    if (refresh == null) { state = const AuthState(); return; }
+    final cachedUserId = await api.currentUserId();
+    if (refresh == null) {
+      if (mounted) state = const AuthState();
+      return;
+    }
     try {
-      final response = await api.dio.post('/api/v1/auth/refresh', data: {'refresh_token': refresh, 'client': 'mobile'});
+      // Refresh is an authentication endpoint, not a protected resource.
+      // A rejected refresh must not trigger another automatic refresh.
+      final response = await api.dio.post(
+        '/api/v1/auth/refresh',
+        data: {'refresh_token': refresh, 'client': 'mobile'},
+        options: Options(extra: {'skipAuth': true}),
+      );
       await api.saveTokens(response.data as Map<String, dynamic>);
       final userId = await api.currentUserId();
-      final onboardingUserId = await api.storage.read(key: 'onboarding_required_user_id');
-      state = AuthState(authenticated: true, needsOnboarding: userId != null && onboardingUserId == userId);
+      if (userId == null) throw StateError('Refresh did not restore a user');
+      await _restoreLocalSession(userId);
+    } on DioException catch (error) {
+      if (_temporaryRefreshFailure(error)) {
+        // A cold start without connectivity must not sign out an existing
+        // local account or make its saved drafts inaccessible. This only
+        // restores the local UI; every network request still needs server auth.
+        if (cachedUserId != null && await api.currentUserId() == cachedUserId) {
+          await _restoreLocalSession(cachedUserId);
+        } else if (mounted) {
+          state = const AuthState(error: 'Connect to the internet to restore your session.');
+        }
+        return;
+      }
+      // A definitive rejected refresh (including a revoked/expired session)
+      // does not unlock the local account. The account-scoped drafts remain
+      // stored and become accessible after the same account signs in again.
+      await pushRegistration.unregister();
+      await api.clearTokens();
+      if (mounted) state = const AuthState();
     } catch (_) {
       await pushRegistration.unregister();
       await api.clearTokens();
-      state = const AuthState();
+      if (mounted) state = const AuthState();
     }
   }
 
   Future<bool> login(String email, String password, {bool requireOnboarding = false}) async {
     state = const AuthState(loading: true);
     try {
-      final response = await api.dio.post('/api/v1/auth/login', data: {'email': email.trim(), 'password': password, 'client': 'mobile', 'device_name': 'Flutter'});
+      final response = await api.dio.post('/api/v1/auth/login', data: {'email': email.trim(), 'password': password, 'client': 'mobile', 'device_name': 'Flutter'}, options: Options(extra: {'skipAuth': true}));
       await api.saveTokens(response.data as Map<String, dynamic>);
       final userId = await api.currentUserId();
       if (requireOnboarding && userId != null) {
@@ -61,7 +107,7 @@ class AuthController extends StateNotifier<AuthState> {
   Future<bool> register(String name, String email, String password) async {
     state = const AuthState(loading: true);
     try {
-      final response = await api.dio.post('/api/v1/auth/register', data: {'name': name.trim(), 'email': email.trim(), 'password': password});
+      final response = await api.dio.post('/api/v1/auth/register', data: {'name': name.trim(), 'email': email.trim(), 'password': password}, options: Options(extra: {'skipAuth': true}));
       if (response.statusCode == 201) return await login(email, password, requireOnboarding: true);
       return false;
     } on DioException catch (e) {
