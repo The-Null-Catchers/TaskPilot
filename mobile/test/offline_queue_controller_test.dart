@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -18,10 +19,18 @@ class _NetworkFailure {
   const _NetworkFailure();
 }
 
+class _HeldReply {
+  _HeldReply(this.started, this.release);
+
+  final Completer<void> started;
+  final Completer<void> release;
+}
+
 class _ScriptedAdapter implements HttpClientAdapter {
   _ScriptedAdapter(this.script);
 
   final List<Object> script;
+  final List<RequestOptions> requests = [];
   int calls = 0;
 
   @override
@@ -30,10 +39,22 @@ class _ScriptedAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
+    requests.add(options);
     if (calls >= script.length) {
       throw StateError('No scripted response for ${options.method} ${options.path}');
     }
     final step = script[calls++];
+    if (step is _HeldReply) {
+      step.started.complete();
+      await step.release.future;
+      return ResponseBody.fromString(
+        '{}',
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
     if (step is _NetworkFailure) {
       throw DioException(
         requestOptions: options,
@@ -70,11 +91,36 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  test('first request is persisted before network acknowledgement', () async {
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final api = await _apiWith([_HeldReply(started, release)]);
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    final sending = controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'Durable before send'},
+      label: 'Update DEV-1',
+    );
+
+    await started.future;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('taskpilot_offline_mutations_v1_user-1');
+    expect(raw, contains('Durable before send'));
+
+    release.complete();
+    expect(await sending, MutationOutcome.synced);
+    expect(controller.state.items, isEmpty);
+  });
+
   test('network failure queues edit and successful reconnect replays it', () async {
     final api = await _apiWith([
       const _NetworkFailure(),
       const _Reply(200),
     ]);
+    final adapter = api.dio.httpClientAdapter as _ScriptedAdapter;
     final controller = OfflineQueueController(api);
     await controller.initialize();
 
@@ -88,11 +134,17 @@ void main() {
     expect(outcome, MutationOutcome.queued);
     expect(controller.state.pendingCount, 1);
     expect(controller.state.items.single.status, OfflineMutationStatus.pending);
+    final mutationId = controller.state.items.single.id;
 
     await controller.sync();
 
     expect(controller.state.items, isEmpty);
     expect(controller.state.syncing, isFalse);
+    expect(adapter.requests, hasLength(2));
+    expect(
+      adapter.requests.map((request) => request.headers['Idempotency-Key']),
+      everyElement(mutationId),
+    );
   });
 
   test('409 is preserved as a conflict for explicit resolution', () async {
@@ -109,7 +161,7 @@ void main() {
 
     expect(outcome, MutationOutcome.conflict);
     expect(controller.state.conflictCount, 1);
-    expect(controller.state.items.single.error, contains('Server data changed'));
+    expect(controller.state.items.single.error, contains('newer version'));
   });
 
   test('401 preserves queued edit as sign-in required and can retry later', () async {
@@ -139,9 +191,7 @@ void main() {
   });
 
   test('a conflict survives controller restart with the original draft', () async {
-    final api = await _apiWith([
-      const _Reply(409, '{"detail":"conflict"}'),
-    ]);
+    final api = await _apiWith([const _Reply(409, '{"detail":"conflict"}')]);
     final first = OfflineQueueController(api);
     await first.initialize();
 
@@ -160,6 +210,37 @@ void main() {
     expect(restored.state.items.single.status, OfflineMutationStatus.conflict);
     expect(restored.state.items.single.data['version'], 1);
     expect(restored.state.items.single.data['title'], 'Keep this offline draft');
+  });
+
+  test('switching accounts during an in-flight replay clears old queue from view', () async {
+    final started = Completer<void>();
+    final release = Completer<void>();
+    final api = await _apiWith([
+      const _NetworkFailure(),
+      _HeldReply(started, release),
+    ]);
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'User one only'},
+      label: 'Update DEV-1',
+    );
+    expect(controller.state.items, hasLength(1));
+
+    final syncing = controller.sync();
+    await started.future;
+    await api.storage.write(key: 'current_user_id', value: 'user-2');
+    release.complete();
+    await syncing;
+
+    expect(controller.state.items, isEmpty);
+    await controller.initialize();
+    expect(controller.state.items, isEmpty);
+    await api.storage.write(key: 'current_user_id', value: 'user-1');
+    await controller.initialize();
+    expect(controller.state.items, isEmpty);
   });
 
   test('queued edits are restored from account-scoped local storage', () async {
@@ -181,5 +262,155 @@ void main() {
     expect(restored.state.items, hasLength(1));
     expect(restored.state.items.single.label, 'Prioritize DEV-1');
     expect(restored.state.items.single.data['version'], 4);
+  });
+
+  test('a conflict blocks later mutations until the user resolves it', () async {
+    final api = await _apiWith([
+      const _Reply(409, '{"detail":"conflict"}'),
+    ]);
+    final adapter = api.dio.httpClientAdapter as _ScriptedAdapter;
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'First draft'},
+      label: 'Update DEV-1',
+    );
+    final second = await controller.mutate(
+      method: 'POST',
+      path: '/api/v1/tasks/task-1/comments/rich',
+      data: const {'body': 'Second queued action'},
+      label: 'Comment on DEV-1',
+    );
+
+    expect(second, MutationOutcome.queued);
+    expect(controller.state.items, hasLength(2));
+    await controller.sync();
+
+    expect(adapter.requests, hasLength(1));
+    expect(controller.state.items.first.status, OfflineMutationStatus.conflict);
+    expect(controller.state.items.last.status, OfflineMutationStatus.pending);
+  });
+
+  test('temporary server failures stay queued and reuse the same idempotency key', () async {
+    final api = await _apiWith([
+      const _NetworkFailure(),
+      const _Reply(503, '{"detail":"unavailable"}'),
+      const _Reply(200),
+    ]);
+    final adapter = api.dio.httpClientAdapter as _ScriptedAdapter;
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'Retry safely'},
+      label: 'Update DEV-1',
+    );
+    final mutationId = controller.state.items.single.id;
+
+    await controller.sync();
+    expect(controller.state.pendingCount, 1);
+    await controller.sync();
+
+    expect(controller.state.items, isEmpty);
+    expect(adapter.requests, hasLength(3));
+    expect(
+      adapter.requests.map((request) => request.headers['Idempotency-Key']),
+      everyElement(mutationId),
+    );
+  });
+
+  test('account switching never exposes another account queued mutations', () async {
+    final api = await _apiWith([const _NetworkFailure()]);
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 1, 'title': 'Private user one draft'},
+      label: 'Update DEV-1',
+    );
+    expect(controller.state.items, hasLength(1));
+
+    await api.storage.write(key: 'current_user_id', value: 'user-2');
+    await controller.initialize();
+    expect(controller.state.items, isEmpty);
+
+    await api.storage.write(key: 'current_user_id', value: 'user-1');
+    await controller.initialize();
+    expect(controller.state.items, hasLength(1));
+    expect(controller.state.items.single.data['title'], 'Private user one draft');
+  });
+
+  test('conflict preview compares the current server values before applying', () async {
+    const server = '{"id":"task-1","version":4,"title":"Web title","description":"Web body","priority":"high","status":"open"}';
+    final api = await _apiWith([
+      const _Reply(409, '{"detail":"conflict"}'),
+      const _Reply(200, server),
+      const _Reply(200, server),
+      const _Reply(200, '{"id":"task-1","version":5,"title":"Mobile title"}'),
+    ]);
+    final adapter = api.dio.httpClientAdapter as _ScriptedAdapter;
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 2, 'title': 'Mobile title', 'description': 'Mobile body'},
+      label: 'Update DEV-1',
+    );
+    final mutationId = controller.state.items.single.id;
+    final preview = await controller.previewConflict(mutationId);
+
+    expect(preview?.canApply, isTrue);
+    expect(preview?.serverVersion, 4);
+    expect(preview?.serverValues['title'], 'Web title');
+    expect(preview?.localValues['title'], 'Mobile title');
+
+    final applied = await controller.applyLocalConflict(
+      mutationId,
+      expectedServerVersion: 4,
+    );
+
+    expect(applied, isTrue);
+    expect(controller.state.items, isEmpty);
+    expect(adapter.requests.last.headers['Idempotency-Key'], mutationId);
+  });
+
+  test('conflict resolution refuses to overwrite a server version changed after review', () async {
+    final api = await _apiWith([
+      const _Reply(409, '{"detail":"conflict"}'),
+      const _Reply(200, '{"id":"task-1","version":4,"title":"Server v4"}'),
+      const _Reply(200, '{"id":"task-1","version":5,"title":"Server v5"}'),
+    ]);
+    final adapter = api.dio.httpClientAdapter as _ScriptedAdapter;
+    final controller = OfflineQueueController(api);
+    await controller.initialize();
+
+    await controller.mutate(
+      method: 'PATCH',
+      path: '/api/v1/tasks/task-1',
+      data: const {'version': 2, 'title': 'My draft'},
+      label: 'Update DEV-1',
+    );
+    final mutationId = controller.state.items.single.id;
+    await controller.previewConflict(mutationId);
+
+    final applied = await controller.applyLocalConflict(
+      mutationId,
+      expectedServerVersion: 4,
+    );
+
+    expect(applied, isFalse);
+    expect(adapter.requests, hasLength(3));
+    expect(controller.state.conflictCount, 1);
+    expect(controller.state.items.single.data['title'], 'My draft');
+    expect(controller.state.items.single.error, contains('changed again'));
   });
 }

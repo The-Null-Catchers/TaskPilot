@@ -2,13 +2,14 @@ import re
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user, require_project, require_workspace
 from app.collaboration_models import Checklist, ChecklistItem, ProjectMember, Subtask, TaskDependency, TaskWatcher
 from app.db import get_db
+from app.idempotency import add_idempotent, validate_idempotency_key
 from app.models import (
     ActivityLog,
     BoardColumn,
@@ -185,12 +186,35 @@ async def collaboration_state(task_id: UUID, user: User = Depends(current_user),
 
 
 @router.post("/tasks/{task_id}/comments/rich", response_model=CommentOut, status_code=201)
-async def add_comment_with_mentions(task_id: UUID, data: MentionedCommentCreate, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def add_comment_with_mentions(
+    task_id: UUID,
+    data: MentionedCommentCreate,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
+):
+    idempotency_key = validate_idempotency_key(idempotency_key)
     task = await _task_access(db, task_id, user.id)
     body = data.body.strip()
-    comment = Comment(task_id=task.id, author_id=user.id, body=body)
-    db.add(comment)
-    await db.flush()
+    comment = Comment(
+        task_id=task.id,
+        author_id=user.id,
+        body=body,
+        client_mutation_id=idempotency_key,
+    )
+    comment, created = await add_idempotent(
+        db,
+        Comment,
+        comment,
+        [
+            Comment.author_id == user.id,
+            Comment.client_mutation_id == idempotency_key,
+        ],
+        {"task_id": task.id, "body": body},
+        idempotency_key,
+    )
+    if not created:
+        return comment
     await _notify_mentions(db, task, user, body)
     watcher_ids = set((await db.scalars(select(TaskWatcher.user_id).where(TaskWatcher.task_id == task.id, TaskWatcher.user_id != user.id))).all())
     mentioned_ids = extract_mention_ids(body)
@@ -202,7 +226,6 @@ async def add_comment_with_mentions(task_id: UUID, data: MentionedCommentCreate,
     payload = CommentOut.model_validate(comment).model_dump(mode="json")
     await publish(task.workspace_id, "comment.created", payload)
     return comment
-
 
 @router.get("/tasks/{task_id}/comments/{comment_id}/reactions", response_model=list[CommentReactionOut])
 async def list_comment_reactions(task_id: UUID, comment_id: UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
@@ -284,6 +307,7 @@ async def archive_task(task_id: UUID, user: User = Depends(current_user), db: As
     task = await _task_access(db, task_id, user.id, write=True)
     task.deleted_at = datetime.now(UTC)
     task.version += 1
+    task.last_mutation_id = None
     _activity(db, task, user.id, "task.archived", f"Archived {task.identifier}")
     await db.commit()
     await db.refresh(task)
@@ -298,6 +322,7 @@ async def restore_task(task_id: UUID, user: User = Depends(current_user), db: As
         return task
     task.deleted_at = None
     task.version += 1
+    task.last_mutation_id = None
     _activity(db, task, user.id, "task.restored", f"Restored {task.identifier}")
     await db.commit()
     await db.refresh(task)

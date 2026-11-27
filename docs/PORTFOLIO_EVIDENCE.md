@@ -1,0 +1,67 @@
+# TaskPilot portfolio evidence ledger
+
+This ledger separates **observed CI results** from implementation work and unverified acceptance scenarios.
+
+## Revisions
+
+- Starting revision on main: `9ce715ad5cb9cfdded7d52e950ad3c4a0920644b`.
+- Feature branch: `portfolio/taskpilot-completion`.
+- Initial feature-branch checkpoint: `5bee1ab9594713907fe9604b074bd632bcc4e6c5`.
+- Mobile sync/queue implementation checkpoint: `b953e23597a6ac193ac3b7cebabdb0cb1b11b8cc`.
+- Latest implementation checkpoint: `3dc099bd57f6f4678209c587da50e6e932140fbb`. The final PR head includes subsequent evidence/documentation commits; use the exact SHA shown by GitHub Actions for release decisions.
+
+## Verified historical evidence
+
+| Revision | Evidence | Result | Scope |
+| --- | --- | --- | --- |
+| `9ce715ad5cb9cfdded7d52e950ad3c4a0920644b` | [TaskPilot CI #44529059942](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44529059942) | Success | Existing baseline CI; not the feature branch |
+| `5e57197ed66f2abd729f6c7c07c4ca6f5f7d5d3d` | [TaskPilot CI #44304699815](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44304699815) | Success | PR #136 browser collaboration / stale edit regression |
+
+The historical CI jobs include backend Ruff/Pytest/migrations, web lint/Vitest/typecheck/build, browser E2E, Flutter analyze/tests and Android builds, unsigned iOS build, and production Compose/Docker build. These successes do **not** transfer automatically to later commits.
+
+## Current feature-branch evidence
+
+- [PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140) is a draft against `main`. Do not merge until all gates pass.
+- [TaskPilot CI run #44916081158](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916081158) for `b953e23597a6ac193ac3b7cebabdb0cb1b11b8cc`: backend migration and browser E2E setup **failed** because the new Alembic revision identifier exceeded PostgreSQL's 32-character version column. Web lint/test/typecheck/build passed. Do not use this run as a passing release gate.
+- Fix commit: `1ba5d2386f0749207bf817a2240394a359091102` shortens the Alembic revision ID. [Follow-up CI #44916220188](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916220188) was in progress when this ledger was drafted. Recheck before claiming success.
+- The new backend migration revision is `0017_offline_idempotency` (shortened after a CI failure caused by the original 33-character revision ID). Migration upgrade/downgrade must be reverified on the final SHA.
+
+### Follow-up runs
+
+- [CI #44916301159](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916301159) on `e25fe8a2acfc1360eee81a8430ed82bf73cdd8c8`: backend Ruff/Pytest/migrations and browser E2E passed (historical checkpoint).
+- [CI #44916442059](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916442059) on `8c5f5b69330a6385d134d1965d5a179759df847c`: backend, web, browser E2E, and Docker jobs passed at the time of inspection. Flutter build jobs were still in progress.
+- [CI #44916695537](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44916695537) on `3dc099bd57f6f4678209c587da50e6e932140fbb`: **pending at documentation time**. This is the newest implementation test run, including write-ahead persistence.
+- All final-head checks must be inspected after completion. A queued/in-progress job is not a pass.
+
+## Pending acceptance matrix
+
+| Requirement | Evidence still required |
+| --- | --- |
+| Durable offline edit across process restart | Flutter test plus emulator/device restart |
+| FIFO replay and idempotent retry | Flutter + backend tests, exact SHA CI |
+| HTTP 409 conflict and preserved draft | Mobile test and Android/web E2E |
+| Server/local comparison and guarded resolution | Mobile widget/controller test and Android E2E |
+| Account switching and local cache isolation | Mobile tests and device account-switch walkthrough |
+| Audit history records one actual update | Backend test and demo verification |
+| Two browser realtime collaboration | Existing PR #136 evidence; rerun on final SHA |
+| Android APK/AAB and iOS unsigned build | Final SHA CI |
+| Staging smoke, push providers, restore drill | Environment-specific manual validation |
+| Screenshots (4–6) and 60–120s recording | Genuine running app capture; not yet available |
+| License and contributor attribution | Maintainer decision |
+
+## Screenshots and recording
+
+No new screenshots or recording are claimed for the feature branch at this checkpoint. Historical Playwright artifacts may contain genuine browser screenshots but must be inspected, matched to their SHA, and curated before publication. Do not invent images or mark this gate complete.
+
+## Security and release limitations
+
+Offline SharedPreferences are account-partitioned but not a substitute for an encrypted local database. Backend idempotency covers supported endpoints, not arbitrary operations. Physical Android/iOS push, signed store distribution, restore drills, and production deployment are not validated by this evidence ledger.
+
+Update this file with links to exact successful checks and screenshots after they exist.
+
+## November 25 follow-up
+
+- [CI #44917499098](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098) completed successfully on `d42016b8907383d732aaa89814b14257d531c562`: all six jobs passed. Backend: 95 passed, 1 warning. Playwright: 3 passed. Runtime npm audit: 0 vulnerabilities. Flutter analyzer: no issues; Flutter tests passed on Android and iOS jobs. Android release APK (59.3 MB), AAB (57.6 MB), unsigned iOS Runner.app (24.7 MB), production Compose and Docker image builds succeeded.
+- [Cold-start fix](https://github.com/The-Null-Catchers/TaskPilot/commit/33448547f05b988b54eb01aa749090e76d28bb55): transient refresh failures retain the identified local account and its offline drafts; rejected refreshes require sign-in. Five new regression cases are included. **Not yet verified by CI at documentation time.**
+- [Browser artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14712117865), [Android artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14712299250), [unsigned iOS artifact](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44917499098/artifacts/14711888917) correspond to the earlier verified revision, not the new fix. Screenshot contents have not been curated or independently inspected.
+- No local Flutter SDK, Docker or Android emulator was available in the review environment. Device acceptance, release signing, restore drill, recording and fresh CI remain open.

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_user
@@ -19,5 +19,6 @@ async def add_comment(
     data: MentionedCommentCreate,
     user: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=64),
 ):
-    return await add_comment_with_mentions(task_id, data, user, db)
+    return await add_comment_with_mentions(task_id, data, user, db, idempotency_key)

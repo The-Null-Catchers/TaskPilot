@@ -478,7 +478,7 @@ async def delete_column(
         await db.execute(
             update(Task)
             .where(Task.column_id == column.id)
-            .values(column_id=destination.id, version=Task.version + 1)
+            .values(column_id=destination.id, version=Task.version + 1, last_mutation_id=None)
         )
 
     await db.delete(column)

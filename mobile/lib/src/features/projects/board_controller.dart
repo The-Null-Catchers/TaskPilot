@@ -6,6 +6,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../core/api.dart';
 import '../../core/offline_queue.dart';
+import '../auth/auth_controller.dart';
 import '../tasks/task_models.dart';
 
 class BoardState {
@@ -19,6 +20,7 @@ class BoardState {
 }
 
 final boardProvider = StateNotifierProvider.family<BoardController, BoardState, String>((ref, projectId) {
+  ref.watch(authProvider);
   return BoardController(ref.watch(apiProvider), ref.read(offlineQueueProvider.notifier), projectId)..load();
 });
 
@@ -30,23 +32,35 @@ class BoardController extends StateNotifier<BoardState> {
   WebSocketChannel? _channel;
   bool _connecting = false;
 
-  Future<void> _cache(BoardData board) async {
+  Future<void> _cache(BoardData board, String ownerUserId) async {
+    if (await api.currentUserId() != ownerUserId) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('cached_board_$projectId', jsonEncode(board.toJson()));
+    await prefs.setString(
+      'cached_board_${ownerUserId}_$projectId',
+      jsonEncode(board.toJson()),
+    );
   }
 
   Future<void> load({bool quiet = false}) async {
+    final userId = await api.currentUserId();
+    if (userId == null) {
+      state = const BoardState(loading: false);
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
-    final cacheKey = 'cached_board_$projectId';
+    final cacheKey = 'cached_board_${userId}_$projectId';
     if (!quiet) state = BoardState(loading: true, board: state.board, pendingSync: state.pendingSync, conflict: state.conflict);
     try {
       final response = await api.dio.get('/api/v1/projects/$projectId/board');
       final board = BoardData.fromJson((response.data as Map).cast<String, dynamic>());
+      if (!mounted || await api.currentUserId() != userId) return;
       await prefs.setString(cacheKey, jsonEncode(board.toJson()));
+      if (!mounted || await api.currentUserId() != userId) return;
       state = BoardState(loading: false, board: board);
       await _connectRealtime(board.project.workspaceId);
       await queue.sync();
     } catch (_) {
+      if (await api.currentUserId() != userId) return;
       final cached = prefs.getString(cacheKey);
       if (cached != null) {
         state = BoardState(loading: false, offline: true, pendingSync: state.pendingSync, conflict: state.conflict, board: BoardData.fromJson((jsonDecode(cached) as Map).cast<String, dynamic>()));
@@ -97,6 +111,8 @@ class BoardController extends StateNotifier<BoardState> {
   }
 
   Future<MutationOutcome> moveTask(TaskItem task, BoardColumn destination) async {
+    final ownerUserId = await api.currentUserId();
+    if (ownerUserId == null) throw StateError('Sign in before moving a task');
     final current = state.board;
     if (current == null || task.columnId == destination.id) return MutationOutcome.synced;
     final destinationTasks = current.tasks.where((item) => item.columnId == destination.id).toList()..sort((a, b) => a.position.compareTo(b.position));
@@ -104,7 +120,7 @@ class BoardController extends StateNotifier<BoardState> {
     final optimisticTask = task.copyWith(columnId: destination.id, position: position, version: task.version + 1, updatedAt: DateTime.now().toUtc().toIso8601String());
     final optimisticBoard = BoardData(project: current.project, columns: current.columns, tasks: current.tasks.map((item) => item.id == task.id ? optimisticTask : item).toList());
     state = BoardState(loading: false, board: optimisticBoard, offline: state.offline, pendingSync: state.pendingSync, conflict: state.conflict);
-    await _cache(optimisticBoard);
+    await _cache(optimisticBoard, ownerUserId);
     try {
       final outcome = await queue.mutate(
         method: 'POST',
@@ -120,7 +136,7 @@ class BoardController extends StateNotifier<BoardState> {
       return outcome;
     } catch (_) {
       state = BoardState(loading: false, board: current);
-      await _cache(current);
+      await _cache(current, ownerUserId);
       rethrow;
     }
   }

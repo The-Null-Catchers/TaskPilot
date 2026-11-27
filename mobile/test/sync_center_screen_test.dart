@@ -62,10 +62,10 @@ void main() {
 
     expect(find.text('Sync Center'), findsOneWidget);
     expect(find.text('2 local changes'), findsOneWidget);
-    expect(find.text('0 pending · 1 conflicts · 1 need sign-in'), findsOneWidget);
+    expect(find.text('0 pending · 1 conflicts · 1 need sign-in · 0 failed'), findsOneWidget);
     expect(find.text('Sign in required'), findsOneWidget);
     expect(find.text('Needs review'), findsOneWidget);
-    expect(find.text('Apply my changes'), findsOneWidget);
+    expect(find.text('Review conflict'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
 }

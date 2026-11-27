@@ -20,6 +20,14 @@ This roadmap applies to this repository and follows the shared Null Catchers por
 
 **Demo scenario** Assign a task → edit offline → resolve a conflict → see notification and audit history. [README](https://github.com/The-Null-Catchers/TaskPilot/blob/main/README.md), [Release Checklist](https://github.com/The-Null-Catchers/TaskPilot/blob/main/docs/RELEASE_CHECKLIST.md).
 
+## Portfolio completion checkpoint (November 21, 2026)
+
+The draft [PR #140](https://github.com/The-Null-Catchers/TaskPilot/pull/140) extends the existing baseline rather than replacing it. Its first implementation commits add backend idempotency metadata, stable mobile mutation IDs, write-ahead persistence, ordered replay, explicit server/local conflict comparison, account-scoped caches, single-flight mobile refresh, and versioned task audit summaries. The migration revision identifier was shortened to fit PostgreSQL's Alembic version column.
+
+**Still open:** exact-SHA CI confirmation, emulator/physical-device offline scenario, audit verification against both clients, genuine screenshots/recording, staging smoke and restore drill, and licensing. The earlier baseline CI success does not close these new acceptance gates.
+
+The demo, engineering decisions, and evidence are documented in [PORTFOLIO_DEMO.md](docs/PORTFOLIO_DEMO.md), [CASE_STUDY.md](docs/CASE_STUDY.md), and [PORTFOLIO_EVIDENCE.md](docs/PORTFOLIO_EVIDENCE.md).
+
 ## Next milestones
 
 [PR #136](https://github.com/The-Null-Catchers/TaskPilot/pull/136) verified that a card moves between two browsers without reload and that a stale edit gets HTTP 409 while its draft remains visible. [Browser run](https://github.com/The-Null-Catchers/TaskPilot/actions/runs/44304699815).
@@ -50,3 +58,9 @@ A hosted demo is optional. Code execution, server administration, and secret man
 - Review the final diff and verify required checks for its exact SHA before merging. Follow branch protection.
 - For documentation-only changes with no applicable workflow, verify content and links and record the checks actually performed.
 - Tie performance, security, and readiness claims to supporting evidence.
+
+## November 25 follow-up
+
+- Verified all six CI jobs on `d42016b8907383d732aaa89814b14257d531c562` (95 backend tests, 3 browser E2E tests, Flutter tests and mobile builds, Docker gates).
+- Fixed cold startup clearing credentials on temporary refresh failure; added five regression cases in `mobile/test/auth_restore_test.dart`. New revision requires its own CI and emulator verification.
+- P0 device acceptance remains open. See the evidence ledger for exact revision boundaries.
